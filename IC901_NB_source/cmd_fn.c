@@ -135,7 +135,7 @@ uint64_t initlcd[] = { (uint64_t)4,
 };
 
 //				   0123456789012345
-const char un_ary[] = { "RDU-900,ke0ff\0\0\0" };					// init User SN string
+const char un_ary[] = { "RDU-901,ke0ff\0\0\0" };					// init User SN string
 const char teststr[] = { "THIS IS KE0FF " };							// test string
 
 char	band_str[6][5] = {
@@ -156,7 +156,7 @@ union{
 // local Fn declarations
 
 void get_BCD32(char *sptr, U32 *bcdval);
-U8 get_Dargs(U8 argsrt, U8 nargs, char* args[ARG_MAX], U16 params[ARG_MAX]);
+U8 get_Dargs(U8 argsrt, U8 nargs, char* args[ARG_MAX], U32 params[ARG_MAX]);
 cmd_type cmd_srch(char* string);
 char do_cmd_help(U8 cmd_id);
 char parm_srch(U8 nargs, char* args[ARG_MAX], char* parm_str);
@@ -191,7 +191,7 @@ int x_cmdfn(U8 nargs, char* args[ARG_MAX], U16* offset){
 	char	obuf[OBUF_LEN];			// gp output buffer
 //	char	abuf[30];				// temp string buffer
 //	char	bbuf[6];				// temp string buffer
-	U16		params[ARG_MAX];		// holding array for numeric params
+	U32		params[ARG_MAX];		// holding array for numeric params
 	char	c;						// char temp
 	char	d;						// char temp
 	char	pc = FALSE;				// C flag (set if "-C" found in args)
@@ -200,13 +200,14 @@ int x_cmdfn(U8 nargs, char* args[ARG_MAX], U16* offset){
 	char	ps = FALSE;				// s flag (set if <wsp>-S<wsp> found in args)
 	char	pv = FALSE;				// V flag (set if <wsp>-V<wsp> found in args)
 	char	pr = FALSE;				// R flag (set if <wsp>-R<wsp> found in args)
+	char	pt = FALSE;				// T flag (set if <wsp>-T<wsp> found in args)
 	int		cmd_found = TRUE;		// default to true, set to false if no valid cmd identified
 //	char*	q;						// char temp pointer
 	char*	s;						// char temp pointer
 	char*	t;						// char temp pointer
 	char	cmd_id;					// command enumerated id
 //	U8		g;						// temp
-//	U8		h;						// temp
+	U8		h;						// temp
 	U8		i;						// temp
 	U8		j;						// temp
 	U8		l;						// temp
@@ -284,6 +285,11 @@ int x_cmdfn(U8 nargs, char* args[ARG_MAX], U16* offset){
 				pr = TRUE;
 				nargs--;
 			}
+			c = parm_srch(nargs, args, "-T");									// capture x-flag select floater
+			if(c){
+				pt = TRUE;
+				nargs--;
+			}
 			gas_gage(2);														// init gas gauge to disabled state
 			switch(cmd_id){														// dispatch command
 				case help1:
@@ -324,25 +330,23 @@ int x_cmdfn(U8 nargs, char* args[ARG_MAX], U16* offset){
 					break;
 
 				case bttest:
-					putsQ("BTtst");
-/*					if(gotmsgn()){
-						getssQ(obuf);
-						putssQ("{");
-						putsQ(obuf);
-						putssQ("}");
-					}*/
-					putssQ(args[1]);
-//					putssQ(args[1]);
-//					wait(1100);
-//					putssQ("\r");
-/*					do{
-						if(gotmsgn(0)){
-							putsQ(get_btptrQ());
-							clr_btptrQ();
-							gotmsgn(1);
+					putsQ("COMPtst");
+					putsQ("       Ud");
+					i = 0xff;
+					k = 0;
+					do{
+						j = ((COMP_ACSTAT0_R & 0x02) >> 1) | (COMP_ACSTAT1_R & 0x02);
+						if(i != j){
+							sprintf(obuf,"MU/D2: %d%d     %02d", j&0x01, j>>1, k++);
+							putsQ(obuf);
+							i = j;
 						}
-					}while(bchar != ESC);*/
-//					putssQ("---\r");
+						if(bchar == 'a'){
+							i = 0xff;
+							bchar = '\0';
+							putsQ("       Ud");
+						}
+					}while(bchar != ESC);
 					break;
 
 				case mstr:														// mem string: p[0] = band+1, p[1] = mem#, p[2] = string
@@ -549,7 +553,8 @@ int x_cmdfn(U8 nargs, char* args[ARG_MAX], U16* offset){
 						j = CS_OPEN;
 						putssQ("NVRD:");
 						l = 0;
-						for(ii=(U32)params[0]; ii<(U32)params[1]+1; ii++){
+						h = 32;
+						for(ii=params[0]; ii<params[1]+1; ii++){
 							if(ii == params[1]) j = CS_CLOSE;
 							i = rw8_nvr(ii, 0, j);
 							j = 0;
@@ -572,14 +577,17 @@ int x_cmdfn(U8 nargs, char* args[ARG_MAX], U16* offset){
 					break;
 
 				case nvwr:
-					params[0] = 0;
-					params[1] = 0;
+					params[0] = 0;												// start address
+					params[1] = 0;												// stop address
 					get_Dargs(1, nargs, args, params);							// parse param numerics into params[] array
 					if(px){
-						putssQ("NV descending fill...");
+						// -x switch: Fill with 0xff or desending (-t in addition to -x)
+						putsQ("NV descending fill:");
 						i = 0xff;
 						j = CS_WRITE | CS_OPEN;
-						for(ii=(U32)params[0]; ii<(U32)params[1]+1; ii++){
+						l = 7;
+						h = 16;
+						for(ii=params[0]; ii<params[1]+1; ii++){
 							if(ii == params[1]) j = CS_WRITE | CS_CLOSE;
 							rw8_nvr(ii, i, j);
 							j = CS_WRITE;
@@ -589,10 +597,15 @@ int x_cmdfn(U8 nargs, char* args[ARG_MAX], U16* offset){
 							}else{
 								l--;
 							}
+							if(pt) i--;
+							if(!--h){
+								putsQ("\n");
+								h = 16;
+							}
 						}
 						putsQ("\n");
 					}else{
-						rw8_nvr((U32)params[0], (U8)params[1], CS_WRITE|CS_OPENCLOSE);
+						rw8_nvr(params[0], (U8)params[1], CS_WRITE|CS_OPENCLOSE);
 						i = rw8_nvr((U32)params[0], 0, CS_OPENCLOSE);
 						sprintf(obuf,"NVWR: %05x: %02x",(U32)params[0], i);
 						putsQ(obuf);
@@ -600,11 +613,14 @@ int x_cmdfn(U8 nargs, char* args[ARG_MAX], U16* offset){
 					break;
 
 				case nvcmd:
+					params[0] = 0;
+					get_Dargs(1, nargs, args, params);							// parse param numerics into params[] array
 					if(px){
 						for(i=0; i<16; i++){
 							gp_buf[i] = un_ary[i];
 							rwusn_nvr((U8*)gp_buf, CS_WRITE);
 						}
+						putsQ("Write SN");
 					}
 					if(pc){
 						wen_nvr();
@@ -616,12 +632,11 @@ int x_cmdfn(U8 nargs, char* args[ARG_MAX], U16* offset){
 						}
 						i = 0;
 						if(pw) i = CS_WRITE;
-						params[0] = 0;
-						get_Dargs(1, nargs, args, params);						// parse param numerics into params[] array
-						rws_nvr((U32)params[0], i);
+						rws_nvr((U8)params[0], i);
 						i = rws_nvr(0, 0);
 						rwusn_nvr((U8*)gp_buf, 0);
 						sprintf(obuf,"NV Status: %02x", i);
+						putsQ(obuf);
 						putsQ("User SN:");
 						for(i=0; i<16; i++){
 							sprintf(obuf," %02x", gp_buf[i]);
@@ -633,9 +648,11 @@ int x_cmdfn(U8 nargs, char* args[ARG_MAX], U16* offset){
 						putsQ(gp_buf);
 						gp_buf[13] = i;
 					}
-					if(pr){
-						storecall_nvr(0);
-						putsQ("RECALL NV");
+					if(pr){													// -r: recall NVRAM (params[0] == 0) or store NVRAM (params[0] != 0)
+						wen_nvr();
+						storecall_nvr((uint8_t)params[0]);
+						if(params[0]) putsQ("Store NVRAM");
+						else putsQ("Recall NVRAM");
 					}
 					break;
 
@@ -733,16 +750,20 @@ int x_cmdfn(U8 nargs, char* args[ARG_MAX], U16* offset){
 				    break;
 
 				case kp_data:													// debug, disp T3 capture buf
-#ifdef DEBUG
-					sprintf(obuf,"get key data: %08x",ii);
+//#ifdef DEBUG
+					sprintf(obuf,"get key");
 					putsQ(obuf);
 					do{
 						if(got_key()){
-							putchar_b(get_key());
+							c = get_key();
+							if((c>'~') || (c<' ')) d = '.';
+							else d = c;
+							sprintf(obuf,"get key data: %c  %02d",d, c);
+							putsQ(obuf);
 						}
 					}while(bchar != ESC);
 					putsQ("\n");
-#endif
+//#endif
 					break;
 
 				case tst_att:
@@ -953,6 +974,7 @@ int x_cmdfn(U8 nargs, char* args[ARG_MAX], U16* offset){
 					if(!pc){
 						// normal exec is one line (no "C")
 						ip = adc_buf;
+						i = (U8)(*ip);
 //						i = adc_in(ip);
 						sprintf(obuf,"#samps: %u,  S0: %u,  S1: %u",i,adc_buf[1],adc_buf[7]);
 						putsQ(obuf);
@@ -1616,10 +1638,10 @@ void get_BCD32(char *sptr, U32 *bcdval){
 //	argsrt specifies the first item to be searched and aligns argsrt with params[0]
 //	for multi-arg cmds, fields must be entered in order.
 //=============================================================================
-U8 get_Dargs(U8 argsrt, U8 nargs, char* args[ARG_MAX], U16 params[8]){
+U8 get_Dargs(U8 argsrt, U8 nargs, char* args[ARG_MAX], U32 params[8]){
 
 	char*	s;
-	U16*	ptr1;
+	U32*	ptr1;
 	S32		temp32;
 	U8		i;
 	U8		count = 0;
@@ -1635,20 +1657,20 @@ U8 get_Dargs(U8 argsrt, U8 nargs, char* args[ARG_MAX], U16 params[8]){
 
 				default:
 					count += sscanf(s,"%d",&temp32);			// get decimal value
-					*ptr1 = (U16)(temp32);
+					*ptr1 = (U32)temp32;
 					break;
 
 				case '$':
 					s++;
 					count += sscanf(s,"%x",&temp32);			// get hex if leading "$"
-					*ptr1 = (U16)(temp32);
+					*ptr1 = (U32)temp32;
 					break;
 
 				case 'O':
 				case 'o':
 					s++;
 					count += sscanf(s,"%o",&temp32);			// get octal if leading "O"
-					*ptr1 = (U16)(temp32);
+					*ptr1 = (U32)temp32;
 					break;
 			}
 		}

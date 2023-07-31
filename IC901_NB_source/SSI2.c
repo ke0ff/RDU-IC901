@@ -36,7 +36,7 @@
 
 union	LCDREG	lcdsegs[4];			// lcd bitmap
 union	LCDREG	blinksegs[4];		// lcd blinkmap
-union	LCDREG	lcdcbbuf[5][4];		// lcd ssi2 circ buffer, 5 entries of 4 elements each
+union	LCDREG	lcdcbbuf[CB_MAX][4];	// lcd ssi2 circ buffer, 5 entries of 4 elements each
 U8	cbh;							// circ buff head index
 U8	cbt;							// circ buff tail index
 U8	mst;							// msg tail index
@@ -172,7 +172,8 @@ void lcd_send(uint8_t targ){
 	if(cb >= CB_MAX){
 		cb = 0;
 	}
-	while(cb == cbt);							// wait for buffer to clear
+	set_wait(25);
+	while((cb == cbt) && is_wait());							// this means the buffer is full of stuff to send... wait for buffer to clear
 	if(targ){
 		for(i=0; i<4; i++){
 			lcdcbbuf[cbh][i].bigt = lcdsegs[i].bigt;
@@ -235,7 +236,7 @@ void SSI2_ISR(void){
 			mst = 0;
 			// advance word tail
 			cbt += 1;
-			if(cbt == CB_MAX){
+			if(cbt >= CB_MAX){
 				cbt = 0;
 			}
 		}

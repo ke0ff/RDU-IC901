@@ -235,6 +235,8 @@ void process_UI(U8 cmd){
 		ptt_change = 0;
 		wait(100);
 		mute_radio(0);
+		sputs_lcd("  UI OK  ", 2);
+		lcd_send(1);
 	}else{
 		//**************************************
 		// process the UI for each of the different modes:
@@ -393,7 +395,7 @@ U8 process_MS(U8 mode){
 	static	 U8		hflag;
 	U8	b;					// key beep counter
 	U8	i;					// temp
-	U8	j;					// temp
+//	U8	j;					// temp
 	U8	k;					// temp
 	U32	ii;
 	volatile U32	sin_a0;
@@ -425,7 +427,7 @@ U8 process_MS(U8 mode){
 				ptt_change &= ~PTT_EDGE;
 //				read_sin_flags(SIN_SEND_F);								// clear changes flag
 			}
-			sin_a0 = fetch_sin(0);										// update data
+			sin_a0 = fetch_sin(1);										// update data
 			// check if squelch adjust
 			if(!(xmodeq & SQU_XFLAG)){
 				if(iflags & SIN_MSRF_F){
@@ -482,7 +484,7 @@ U8 process_MS(U8 mode){
 				read_sin_flags(SIN_SQSM_F|SIN_SQSS_F);					// clear changes flag
 			}
 /*			if(iflags & SIN_SEND_F){
-				sin_a1 = fetch_sin(1);
+				sin_a1 = fetch_sin(2);
 				// update TX LED
 				if(sin_a1 & SIN_SEND){
 					// main led
@@ -988,7 +990,7 @@ U8 process_MS(U8 mode){
 					xmode[k] |= MEM_XFLAG;
 				}
 				i = get_last_cos(band_focus);
-				j = i >> 5;
+//				j = i >> 5;
 				i &= 0x1f;
 				read_mem(band_focus, get_memnum(band_focus, 0));
 				write_xmode(band_focus);
@@ -1385,7 +1387,7 @@ U8 test_for_cancel(U8 key){
 // band mute is signalled by flashing the freq display
 //-----------------------------------------------------------------------------
 void mmute_action(U8* mute_flag){
-	U8	i;		// temp
+//	U8	i;		// temp
 
 	if(*mute_flag & MS_MUTE){
 		*mute_flag &= ~MS_MUTE;
@@ -1401,7 +1403,7 @@ void mmute_action(U8* mute_flag){
 }	// end mmute_action()
 
 void smute_action(U8* mute_flag){
-	U8	i;		// temp
+//	U8	i;		// temp
 
 	if(*mute_flag & SUB_MUTE){
 		*mute_flag &= ~SUB_MUTE;
@@ -1931,7 +1933,7 @@ void msmet(U8 srf, U8 blink){
 		}
 		put_spi(lcd_buf, CS_OPENCLOSE);					// send DU message
 	}else{
-//		if(fetch_sin(1) & SIN_SEND){					// if ptt == 1
+//		if(fetch_sin(2) & SIN_SEND){					// if ptt == 1
 		if(ptt_change & PTT_KEYED){						// if ptt == 1
 			if(srf > 2){								// we need *something* from the module...
 				if(get_lohi(MAIN, 0xff)) srf = 2;		// ... before we mod SRF to reflect TX power level

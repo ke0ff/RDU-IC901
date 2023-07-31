@@ -50,6 +50,7 @@ static void TIMER0AHandler(void);
 static void TIMER0BHandler(void);
 static void TIMER1AHandler(void);
 static void TIMER1BHandler(void);
+static void TIMER2AHandler(void);
 static void TIMER2BHandler(void);
 //static void TIMER4AHandler(void);
 //static void TIMER4BHandler(void);
@@ -57,9 +58,8 @@ static void TIMER2BHandler(void);
 //static void GPIO_PM_Handler(void);
 //static void GPIO_PP_Handler(void);
 static void GPIO_PQ_Handler(void);
-static void TIMER2AHandler(void);
 static void SSI2Handler(void);
-static void SSI3Handler(void);
+//static void SSI3Handler(void);
 
 //*****************************************************************************
 //
@@ -167,7 +167,7 @@ void (* const g_pfnVectors[])(void) =
     IntDefaultHandler,                      // 20{	GPIO Port K
 	IntDefaultHandler,                      // 21	GPIO Port L
 	SSI2Handler,                      		// 22	SSI2 Rx and Tx
-	SSI3Handler,                      		// 23	SSI3 Rx and Tx
+	IntDefaultHandler,                     	// 23	SSI3 Rx and Tx
     UART3Handler,                      		// 24{	UART3 Rx and Tx
     UART4Handler,                     	 	// 25	UART4 Rx and Tx
     UART5Handler,                      		// 26	UART5 Rx and Tx
@@ -197,10 +197,10 @@ void (* const g_pfnVectors[])(void) =
 	IntDefaultHandler,                      // 17	GPIO Port P5
     IntDefaultHandler,                      // 18	GPIO Port P6
     IntDefaultHandler,                      // 19	GPIO Port P7
-    IntDefaultHandler,                      // 20{	GPIO Port Q (Summary or Q0)
+	GPIO_PQ_Handler,                        // 20{	GPIO Port Q (Summary or Q0)
     IntDefaultHandler,                      // 21	GPIO Port Q1
     IntDefaultHandler,                      // 22	GPIO Port Q2
-	GPIO_PQ_Handler,                      	// 23	GPIO Port Q3
+	IntDefaultHandler,                      // 23	GPIO Port Q3
     IntDefaultHandler,                      // 24{	GPIO Port Q4
     IntDefaultHandler,                      // 25	GPIO Port Q5
     IntDefaultHandler,                      // 26	GPIO Port Q6
@@ -480,11 +480,11 @@ SSI2Handler(void)
 // This is the code that gets called when the processor receives a ssi3 intr.
 //
 //*****************************************************************************
-static void
+/*static void
 SSI3Handler(void)
 {
 	SSI3_ISR();						// process ssi3 interrupt
-}
+}*/
 
 //*****************************************************************************
 //

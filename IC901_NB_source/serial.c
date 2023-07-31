@@ -1120,7 +1120,7 @@ void rxd_intr(void){
 	while(!(UART0_FR_R & UART_FR_RXFE)){			// process RXD chrs
 		c = UART0_DR_R;
 		rxd_buff[rxd_hptr++] = c;					// feed the buffer
-//		if((c >= ' ') || (c == ESC)) bchar = c;		// if not nul, set global char escape reg
+		if((c >= ' ') || (c == ESC)) bchar = c;		// if not nul, set global char escape reg
 		if((c == EOL) || (c == LF)){
 //			rxd_buff[rxd_hptr++] = '\0';			// EOL
 			rxd_mcnt++;

@@ -33,8 +33,8 @@
 #include "init.h"
 
 
-//******** SSI2_Init *****************
-// Initialize SSI2, 8b, 4800 baud clk
+//******** SSI1_Init *****************
+// Initialize SSI1, 8b, 4800 baud clk
 
 void ssi1_init(void){
 
@@ -49,9 +49,10 @@ void ssi1_init(void){
 												// SSI3CLK = SYSCLK / (CPSDVSR * (1 + SCR)) { 2 <= CPSDVSR <= 254, even only)
 	SSI1_CR1_R = 0x00000000;					// disable SSI, master mode
 	SSI1_CPSR_R = (SYSCLK / ((1 + SSI1_SCR) * SSI1_BR));
-	SSI1_CR0_R = (SSI1_SCR << 8) | 0x07;		// SCR = [15:8], SPH[7] = 0, SPO[6] = 0 Freescale, DSS = 8-bit data
+	SSI1_CR0_R = (SSI1_SCR << SSI_CR0_SCR_S) | SSI_CR0_DSS_8 | SSI_CR0_SPH | SSI_CR0_SPO; // SCR = [15:8], SPH[7] = 0, SPO[6] = 1 ti, DSS = 8-bit data,,, SSI_CR0_FRF_TI |
 	SSI1_IM_R = SSI_IM_EOTIM;					// enable end of tx ISR
-	SSI1_CR1_R |= 0x00000002;					// enable SSI
+	SSI1_CR1_R = SSI_CR1_FSSHLDFRM;				// hold fss
+	SSI1_CR1_R |= SSI_CR1_SSE;					// enable SSI
 //	NVIC_EN1_R = NVIC_EN1_SSI1;
 	return;
 }

@@ -32,22 +32,23 @@
 
 
 //******** SSI3_Init *****************
-// Initialize SSI3, PQ3 edge interrupt, and timer
+// Initialize SSI3, input only on PQ3
 
 void ssi3_init(void){
 
-	SYSCTL_RCGCSSI_R |= SYSCTL_RCGCSSI_R3;		// activate SSI3
-	SSI3_CR1_R = 0x00000000;					// disable SSI, master mode
 	GPIO_PORTQ_AFSEL_R |= DATA2;				// enable alt funct on PQ3
 	GPIO_PORTQ_PCTL_R = GPIO_PCTL_PQ3_SSI3XDAT1;
 	GPIO_PORTQ_AMSEL_R &= ~(DATA2);				// disable analog functionality on PQ
+	SSI3_CR1_R = 0x00000000;					// disable SSI to reset
 												// BR for data2 = 4800
 												// SSI3CLK = SYSCLK / (CPSDVSR * (1 + SCR)) { 2 <= CPSDVSR <= 254, even only)
 	SSI3_CPSR_R = (SYSCLK / ((1 + SSI3_SCR) * SSI3_BR));
-	SSI3_CR0_R = (SSI3_SCR << 8) | 0x07;		// SCR = [15:8], SPH[7] = 0, SPO[6] = 0 Freescale, DSS = 8-bit data
-	SSI3_IM_R = SSI_IM_EOTIM;					// enable end of tx ISR
-	SSI3_CR1_R |= 0x00000002;					// enable SSI
-	NVIC_EN1_R = NVIC_EN1_SSI3;
-	NVIC_EN2_R = NVIC_EN2_GPIO_PORTQ3;
+	SSI3_CR0_R = (SSI3_SCR << SSI_CR0_SCR_S) | SSI_CR0_DSS_16 | SSI_CR0_SPH | SSI_CR0_SPO; // SCR = [15:8], SPH[7] = 1, SPO[6] = 1, DSS = 16-bit data
+	SSI3_CR1_R = SSI_CR1_FSSHLDFRM;				// hold fss
+//	SSI3_IM_R = SSI_IM_EOTIM|8;					// enable end of tx ISR
+	SSI3_ICR_R = 0xff;
+//	NVIC_EN1_R = NVIC_EN1_SSI3;					// enable ISRs
+	SSI3_CR1_R |= SSI_CR1_SSE;					// enable SSI
+
 	return;
 }

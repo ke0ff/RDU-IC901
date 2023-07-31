@@ -57,8 +57,10 @@
 // local declarations
 //-----------------------------------------------------------------------------
 
-U32	sin_addr0;							// holding registers for SIN data (addr 1 and 0)
+U32	sin_addr0;							// holding registers for SIN data (addr 0-3)
 U32	sin_addr1;
+U32	sin_addr2;
+U32	sin_addr3;
 U32	sin_flags;							// bitmapped activity flags that signal changed data
 										// addr1 and 0 are muxed into a single 32 bit flag (only 16 bits of data are ever transferred)
 U8	sout_flags;							// signal for SOUT changes
@@ -404,6 +406,7 @@ void init_radio(void){
 //-----------------------------------------------------------------------------
 void  process_SIN(U8 cmd){
 	U32	sin_data;
+	U32	sin_addrs;
 	U32	ii;				// temp
 	U32 tt;
 	char	dbuf[35];	// !!! debug buff
@@ -413,6 +416,8 @@ void  process_SIN(U8 cmd){
 		sin_time(SIN_ACTIVITY);							// start SIN activity timer
 		sin_addr0 = 0;									// pre-clear data and activity flags
 		sin_addr1 = 0;
+		sin_addr2 = 0;
+		sin_addr3 = 0;
 		sin_flags = 0;
 		lerr = 10L;
 		init_radio();									// init radio and data structures
@@ -420,30 +425,46 @@ void  process_SIN(U8 cmd){
 	}else{												// normal (run) branch
 		if(got_sin()){
 			sin_data = get_sin();						// get'n check for SIN data
-			if((sin_data & SIN_STOP) == SIN_STOP){		// validate extended "stop" bits
-				clr_sys_err(NO_B_PRSNT);				// clear LOS error
-				sin_flags &= ~SIN_SINACTO_F;			// clear timeout error
-				if(sin_data & SIN_ADDR){				// process addr == 1 data
-					// ADDR 1
-					if(sin_data != sin_addr1){			// if data is new (different == new)
-						// process new addr1 data ... calculate change flags
-						ii = ((sin_data ^ sin_addr1) & SIN1_DATA) & 0xffff0000L;
-						sin_flags |= ii;
-						sin_addr1 = sin_data;			// store new data
-					}
-				}else{
-					// process ADDR == 0 data
-					if(sin_data != sin_addr0){			// if data is new (different == new)
-						// process new addr0 data ... calculate change flags
-						ii = (((sin_data ^ sin_addr0) & SIN0_DATA) >> 16) & 0x0000ffffL;
-						sin_flags |= ii;
-						sin_addr0 = sin_data;
-					}
+			clr_sys_err(NO_B_PRSNT);					// clear LOS error
+			sin_flags &= ~SIN_SINACTO_F;				// clear timeout error
+			sin_addrs = sin_data & SIN_ADDR_MASK;		// separate address from data payload
+			switch(sin_addrs){							// process SIN data based on addr
+			case SIN_ADDR_INIT:				// ADDR 0 - IPL init results (modules present)
+				break;
+
+			case  SIN_ADDR_PRIME:			// ADDR 1 - SRF and COS
+				if(sin_data != sin_addr1){				// if data is new (different == new)
+					// process new addr1 data ... calculate change flags
+					ii = (sin_data ^ sin_addr1) & SIN1_DATA;
+					sin_flags |= ii;
+					sin_addr1 = sin_data;				// store new data
 				}
-			}else{
-				// no (valid) data
-				sprintf(dbuf,"0err = %d, data = 0x%08x, free = %d", get_error(), sin_data, get_free());
-				putsQ(dbuf);
+				break;
+
+			case SIN_ADDR_SPRDC:			// ADDR 2 - operator discretes (UP/DN/PTT) and tone decode
+				// process ADDR == 0 data
+				if(sin_data != sin_addr1){				// if data is new (different == new)
+					// process new addr0 data ... calculate change flags
+					ii = ((sin_data ^ sin_addr2) & SIN2_DATA);
+					sin_flags |= ii;
+					sin_addr1 = sin_data;
+				}
+				break;
+
+			case SIN_ADDR_PAGNG:			// ADDR 3 - paging
+				if(sin_data != sin_addr3){				// if data is new (different == new)
+					// process new addr0 data ... calculate change flags
+					ii = (((sin_data ^ sin_addr3) & SIN3_DATA));
+					if(ii & SIN_CODE_MASK){
+						ii |= SIN_CODE_CHANGE;
+					}
+					sin_flags |= (ii & (U32)(SIN_CODE_CHANGE | SIN_AB)) >> CHANGE3_ALIGN;
+					sin_addr3 = sin_data;
+				}
+				break;
+
+			default:
+				break;
 			}
 		}
 		if((!sin_time(0)) && !(sin_flags & SIN_SINACTO_F)){
@@ -514,7 +535,7 @@ U8 process_SOUT(U8 cmd){
 				k = 0xff;																// processing...
 			}
 			if(!j){
-				ii = sin_addr1 & SIN_SEND;
+				ii = sin_addr2 & SIN_SEND;
 				if(ii != ptt_mem) {														// PTT change detected
 					ptt_mem = ii;														// save change
 					if(ii){
@@ -548,7 +569,7 @@ U8 process_SOUT(U8 cmd){
 						}
 						switch(i){														// this will mechanize the various updates to process in order without collision
 						case SOUT_VFOM_N:
-							if(sin_addr1 & SIN_SEND) i = 1;								// get current state of PTT
+							if(sin_addr2 & SIN_SEND) i = 1;								// get current state of PTT
 							else i = 0;
 							pptr = setpll(bandid_m, pll_buf, i, MAIN);					// update main pll
 							pll_ptr = 0;
@@ -950,8 +971,28 @@ void push_vfo(void){
 U32  fetch_sin(U8 addr){
 	U32	ii;
 
-	if(addr) ii = sin_addr1;
-	else ii = sin_addr0;
+	switch(addr){
+	case 0:
+		ii = sin_addr0;		// IPL init frame
+		break;
+
+	case 1:
+		ii = sin_addr1;		// prime frame (COS/SRF)
+		break;
+
+	case 2:
+		ii = sin_addr2;		// PTT/MICud/TONE
+		break;
+
+	case 3:
+		ii = sin_addr3;		// Paging
+		break;
+
+	default:
+		ii = 0xffffffff;
+		break;
+
+	}
 	return ii;
 }
 
@@ -1050,12 +1091,12 @@ U8  get_busy(void){
 
 	if(got_sin()){
 		ii = get_sin();
-		if(ii && !(ii & SIN_ADDR) && !(ii & SIN_BUSY)){
+/*		if(ii && !(ii & SIN_ADDR) && !(ii & SIN_BUSY)){
 			bzy = 1;
 		}else{
 			bzy = 0;
 //			putchar_bQ('-'); //!!! debug
-		}
+		}*/
 	}
 	return bzy;
 }
@@ -1073,7 +1114,7 @@ U8  get_present(void){
 //-----------------------------------------------------------------------------
 void clear_sin(void){
 
-	sin_addr0 &= ~SIN_BUSY;
+	sin_addr1 &= ~SIN_BUSY;
 	return;
 }
 //-----------------------------------------------------------------------------
@@ -1661,8 +1702,8 @@ S8 is_mic_updn(U8 ipl, U8 focus, U8 xmq){
 		click_mem = 0;
 		return 0;
 	}
-	if(sin_flags & SIN_MCK_F){								// if edge flag...
-		if(sin_addr1 & SIN_MCK){							// u/d "clock" active
+/*	if(sin_flags & SIN_MCK_F){								// if edge flag...
+		if(sin_addr2 & SIN_MCK){							// u/d "clock" active
 			micdb_time(1);									// set debounce timer
 			i = 0;											// clear statics
 			click_mem = 0;
@@ -1670,12 +1711,12 @@ S8 is_mic_updn(U8 ipl, U8 focus, U8 xmq){
 		read_sin_flags(SIN_MCK_F);
 	}else{
 		if(!click_mem){
-			if((!micdb_time(0)) && (sin_addr1 & SIN_MCK)){
+			if((!micdb_time(0)) && (sin_addr2 & SIN_MCK)){
 				mic_time(2);								// set long gap time for first press
-		    	if((sin_addr1 & (SIN_MUP | SIN_MCK)) == (SIN_MUP | SIN_MCK)){
+		    	if((sin_addr2 & (SIN_MUP | SIN_MCK)) == (SIN_MUP | SIN_MCK)){
 		    		i = 1;									// if up button pressed, set +
 		    	}
-		    	if((sin_addr1 & (SIN_MUP | SIN_MCK)) == (SIN_MCK)){
+		    	if((sin_addr2 & (SIN_MUP | SIN_MCK)) == (SIN_MCK)){
 		    		i = -1;									// if dn button pressed, set -
 		    	}
 	    		do_dial_beep();								// beep
@@ -1683,7 +1724,7 @@ S8 is_mic_updn(U8 ipl, U8 focus, U8 xmq){
 				rtn = i;
 			}
 		}else{
-			if((!mic_time(0)) && (sin_addr1 & SIN_MCK)){
+			if((!mic_time(0)) && (sin_addr2 & SIN_MCK)){
 				mic_time(1);								// set short gap time for hold press
 				// if mem mode & no scan, start scan
 				if(focus == MAIN){
@@ -1703,7 +1744,7 @@ S8 is_mic_updn(U8 ipl, U8 focus, U8 xmq){
 				}
 			}
 		}
-	}
+	}*/
 	return rtn;
 
 
@@ -1711,7 +1752,7 @@ S8 is_mic_updn(U8 ipl, U8 focus, U8 xmq){
 /*    S8	i = 0;		// return value (no button)
 
     // repeat u/d if button is held for 1+ sec.  abt 100ms rep rate
-	if(sin_addr1 & SIN_MCK){
+	if(sin_addr2 & SIN_MCK){
 	    if(sin_flags & SIN_MCK_F){
 			mic_time(2);									// set long gap time for first press
 	    }
@@ -1724,10 +1765,10 @@ S8 is_mic_updn(U8 ipl, U8 focus, U8 xmq){
 	}
 	if(!micdb_time(0)){
 	    if(sin_flags & SIN_MCK_F){
-	    	if((sin_addr1 & (SIN_MUP | SIN_MCK)) == (SIN_MUP | SIN_MCK)){
+	    	if((sin_addr2 & (SIN_MUP | SIN_MCK)) == (SIN_MUP | SIN_MCK)){
 	    		i = 1;										// if up button pressed, set +
 	    	}
-	    	if((sin_addr1 & (SIN_MUP | SIN_MCK)) == (SIN_MCK)){
+	    	if((sin_addr2 & (SIN_MUP | SIN_MCK)) == (SIN_MCK)){
 	    		i = -1;										// if dn button pressed, set -
 	    	}
 	    	if(i != 0){
@@ -1737,7 +1778,7 @@ S8 is_mic_updn(U8 ipl, U8 focus, U8 xmq){
 	    	read_sin_flags(SIN_MCK_F);
 	    }
 	}else{
-    	if((sin_addr1 & (SIN_MUP | SIN_MCK)) == (SIN_MCK)){
+    	if((sin_addr2 & (SIN_MUP | SIN_MCK)) == (SIN_MCK)){
 	    	read_sin_flags(SIN_MCK_F);						// if dn during debounce, ignore and clear flag
     	}
 	}

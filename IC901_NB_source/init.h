@@ -81,7 +81,7 @@
 #define	NU_PQ0			0x01				// PQ0 = n/c			(i) GPIO
 #define	PORTQ_INIT		(0)
 #define PORTQ_DEN		(NU_PQ4|DATA2|NU_PQ2|NU_PQ1|NU_PQ0)
-#define PORTQ_DIR		(DATA2)
+#define PORTQ_DIR		(0)
 #define PORTQ_PUR		(NU_PQ4|NU_PQ2|NU_PQ1|NU_PQ0)
 
 #define	PTT_TIME		1000				// 1sec PTT timeout
@@ -167,17 +167,19 @@
 #define PORTK_PUR	(NU_PK3|NU_PK2|NU_PK1|RMT_RXD)
 
 // keypad defines
-// Lmkrr rrrrrrcc ==> bitmap of composite reg
+// [xduL mkrr rrrr rrcc] ==> bitmap of composite reg
 
 #define	KB_COL_M		(COL1|COL0)	// mask for kb col 1of2
 #define	KB_NOKEYM		(0xFF)							// key-mask semaphore (port M, rows)
 #define	KB_NOKEYG		(CHECK)							// key-mask semaphore (port G)
 #define	KB_NOKEYK		(SMUTE|LOCK)					// key-mask semaphore (port K)
 #define	KB_NOKEYCOL		(COL1|COL0)						// key-mask semaphore (Port K, col bits)
-#define	KB_NOKEY		(0x1FFC)						// no keypressed semaphore (composite)
-#define	KB_HIKEY		(0x1FFC)						// upper key bits (composite)
-#define	KB_SCNKEY		(0x400)							// scan start value
-#define	KB_SCNCNT		(11)							// scan count
+#define	KB_NOKEY		(0x7FFCL)						// no keypressed semaphore (composite)
+#define	KB_HIKEY		(0x7FFCL)						// upper key bit mask (composite)
+#define	KB_UPKEY		(0x2000)						// MU_D2 "up" key-mask
+#define	KB_DNKEY		(0x4000)						// MU_D2 "dn" key-mask
+#define	KB_SCNKEY		(0x4000>>2)						// scan start value (1st key bit in keycode, shifted by 2 to account for the COL bits being shifted out)
+#define	KB_SCNCNT		(13)							// scan count (# of key entries in each col of LUT)
 #define	COL0_BIT		(0x02)							// composite key-bit locations
 #define	COL1_BIT		(0x01)
 #define	S4_BIT			(0x1000)
@@ -277,8 +279,8 @@
 #define	SPARE_PB0		0x01		    	// PB0 = spare pad			(i)
 #define	PORTB_INIT	(0)
 #define PORTB_DEN	0xff
-#define PORTB_DIR	CLK_DATA1
-#define PORTB_PUR	(SPARE_PB0|SPARE_PB1|SPARE_PB2|SPARE_PB3|NU_PB4)
+#define PORTB_DIR	(CLK_DATA1 | SPARE_PB0)
+#define PORTB_PUR	(CLK_DATA1|SPARE_PB1|SPARE_PB2|SPARE_PB3|NU_PB4)
 
 // PORTA
 #define PORTA SYSCTL_RCGCGPIO_R0
@@ -348,19 +350,21 @@
 //  for normal mode.
 // SYSCLK value in Hz
 
+#define	MASTER_4800	4857
+
 #define	SSI0_BR		3000000									// SSI0, NVRAM tx/rx, bit rate (3MHz)
 #define	SSI0_SCR	19										// SSI0 SCR value
 #define	SSI0_DVSR	(SYSCLK / ((1 + SSI0_SCR) * SSI0_BR))	// SSI0 SCR value
 
-#define	SSI1_BR		4800									// SSI1, DATA1 tx, bit rate (4800 baud)
+#define	SSI1_BR		MASTER_4800								// SSI1, DATA1 tx, bit rate (4800 baud, 4857 as measured)
 #define	SSI1_SCR	99										// SSI1 SCR value
 #define	SSI1_DVSR	(SYSCLK / ((1 + SSI1_SCR) * SSI1_BR))	// SSI1 SCR value
 
-#define	SSI2_BR		100000 //1875000									// SSI2, LCD tx, bit rate (1.875MHz)
+#define	SSI2_BR		100000 									// SSI2, LCD tx, bit rate (100 KHz)
 #define	SSI2_SCR	15										// SSI2 SCR value
 #define	SSI2_DVSR	(SYSCLK / ((1 + SSI2_SCR) * SSI2_BR))	// SSI2 SCR value
 
-#define	SSI3_BR		4800									// SSI3, DATA2 rx, bit rate (4800 baud)
+#define	SSI3_BR		4800								// SSI3, DATA2 rx, bit rate (4800 baud)
 #define	SSI3_SCR	99										// SSI3 SCR value
 #define	SSI3_DVSR	(SYSCLK / ((1 + SSI3_SCR) * SSI3_BR))	// SSI3 SCR value
 
@@ -373,11 +377,11 @@
 #define SYSCLKL 10000L
 
 // SIN bit time defines... assumes PS = 0 (SYSCLK/1 is used for timer)
-#define SIO_BAUD	4800
-#define TIMER2A_PS 0
-#define	SIN_BIT_TIME		(SYSCLK/(SIO_BAUD * (TIMER2A_PS + 1)))		// 10416
-#define	SIN_HALF_BIT_TIME	(SIN_BIT_TIME/2)							// 5208
-
+#define SIO_BAUD	MASTER_4800
+#define TIMER2A_PS 31
+#define	SIN_BIT_TIME		(SYSCLK/(SIO_BAUD * (TIMER2A_PS + 1)))
+#define	SIN_START_BIT_TIME	(SIN_BIT_TIME/2)					// 1/2 bit time delay to align SSI clock with mid-point of sin async data stream
+#define	SIN_EOT_TIME		(18*SIN_BIT_TIME)					// 1 sin word time + 2 stop bits
 // timer definitions
 #define TIMER1_PS 31				// prescale value for timer1
 #define	TIMER1_FREQ	9600			// timer1 intr freq
@@ -491,8 +495,8 @@ extern S8	xoffsent;			// xoff sent
 #define	KEY_HOLD_FL		0x02			// key-hold bit field
 #define	KEY_PRESCALE	10				// sets COL hold time (in ms +1)
 #define KEY_HOLD_TIME	(SEC1/KEY_PRESCALE) // keypad hold timer value (~~ 1 sec)
-#define	KEY_HOLD_KEY	0x8000			// set hi bit of key buffer entry to signal hold
-#define	KEY_RELEASE_KEY	0x4000			// key release keycode
+#define	KEY_HOLD_KEY	0x80000000L		// set hi bit of key buffer entry to signal hold
+#define	KEY_RELEASE_KEY	0x40000000L		// key release keycode
 #define	KHOLD_FLAG		0x80			// flag bit for key hold character
 #define	KREL_FLAG		0x40			// flag bit for key release character
 #define	KEY_RELEASE_CHR	0x3e			// key release character
@@ -519,6 +523,9 @@ extern S8	xoffsent;			// xoff sent
 #define	Qdnchr			51
 #define	SMUTEchr		52
 
+#define	MUP2chr			53
+#define	MDN2chr			54
+
 // key hold chr codes
 #define	SUBchr_H		(33 | KHOLD_FLAG)
 #define	LOCKchr_H		(34 | KHOLD_FLAG)
@@ -541,6 +548,10 @@ extern S8	xoffsent;			// xoff sent
 #define	Qupchr_H		(50 | KHOLD_FLAG)
 #define	Qdnchr_H		(51 | KHOLD_FLAG)
 #define	SMUTEchr_H		(52 | KHOLD_FLAG)
+
+#define	MUP2chr_H		(53 | KHOLD_FLAG)
+#define	MDN2chr_H		(54 | KHOLD_FLAG)
+
 // key release chr codes
 #define	SUBchr_R		(33 | KREL_FLAG)
 #define	LOCKchr_R		(34 | KREL_FLAG)
@@ -563,6 +574,9 @@ extern S8	xoffsent;			// xoff sent
 #define	Qupchr_R		(50 | KREL_FLAG)
 #define	Qdnchr_R		(51 | KREL_FLAG)
 #define	SMUTEchr_R		(52 | KREL_FLAG)
+
+#define	MUP2chr_R		(53 | KREL_FLAG)
+#define	MDN2chr_R		(54 | KREL_FLAG)
 
 #define	HIB_APPL	0					// HIB is being accessed by application
 #define	HIB_INTR	1					// HIB may be accessed by intrpt

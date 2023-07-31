@@ -15,20 +15,52 @@
  *    Copied from IC900_RDU application.  See that project's revnotes prior to 10-19-21 for historical rev status.
  *
  *    Project scope rev History:
- *    03-23-22 jmh:	 Modification work to convert 123 code to 1294 platform and also modify for the change from IC900 to IC901.
- *    				 * 1st-compile complete with CLI functioning.
- *    				 * NVRAM port complete and working.
- *    				 * PWM port complete - NTBT (needs to be tested).
+ *    07-30-23 jmh:	 Modification work to convert 123 code to 1294 platform and also modify for the change from IC900 to IC901.
+ *    03-23-22		 * 1st-compile complete with CLI functioning.
+ *    				 * NVRAM port complete and working.  Re-tested after replacing Tiva processor due to damage during probing.
+ *    				 * PWM port complete - tested, PWMs working.
  *    				 * ENC u/d port complete - NTBT.
- *    				 * base-band keypad port complete - NTBT.  Need to re-work key processing logic to account for the 4 keys
- *    				 	that are changed between the IC900 and IC901.
- *    				 * BEEP port done - NTBT.
+ *    				 * base-band keypad port complete - tested.  Added MU_D2 comparator buttons.
+ *    				 * BEEP port done - tested, beep works.
  *    				 * SSI basic init code complete for LCD, DATA1, and DATA2. Need to flesh out most of the handlers.
- *    				 - need to test comparator init.
- *    				 - need to code LCD handler to accommodate new LCD controller chips.
+ *    				 	LCD (SSI2) coding complete.  Base-band code tested.  Some higher-level functions tested, but not all
+ *    				 * Comparator init tested, words.  Must remember to remove 1K resistor (R42) and 0.001uF cap (C16) from IC901 board on future builds.
+ *    				 * SIN (SSI3) and SOUT (SSI1) base-band code complete.  SIN seems to be working when tapping DATA2 from an working radio.
+ *    				 	SOUT is able to send 40b messages.  Need to test with real radio.  Need to adjust code to accommodate 64b data type.
+ *    				 - need to code encoder up/dn driver
+ *    				 - need to code PTT input on CLK_EX766
+ *    				 - need to look at porting HM-133 master code into this framework
+ *    				 - need to recode the radio init to accommodate the IC901 way of doing things
  *
  *    02-28-22 jmh:  creation date
  *    				 <VERSION 0.0>
+ *
+ *	Tiva TOP-HAT/IC-901 NEW-BRAIN DESIGN NOTES:
+ *
+ *	Lots of "new" here compared with the RDU-900 project.  Right off the bat, this one uses a TM4C1294NCPDT MCU.  The Same NVRAM is used, but is integrated
+ *	into the hardware from the start.  The PWM and DATA1/DATA2 code uses the same peripherals, but the bitmaps are different, so some driver changes
+ *	are needed for the new platform.  Also, the LCD uses different driver ICs which have a completely different architecture from the IC900 which
+ *	necessitates a re-thinking of the driver schema.  The IC901 LCD ICs also don't have built-in blink capability, so the driver will have to creat that.
+ *
+ *	HM-133 feature that exist inside an ATtiny architecture will be integrated into this OS.  The same UP/DN connection will be used, but it is unclear
+ *	how the system will arbitrate between the standard up/dn controls and the UART connection.  The ATtiny used an ADC to help determine the up/dn operation.
+ *	Here, there are only two comparators and a UART RX.
+ *
+ *	PB0 and PB1 are debug I/O signals that can be used for timing and other debug checks.
+ *
+ *	Most of the IC-901 discrete inputs need to be modified from the original design.  This includes ROW[7:0], /CLK_EX766, SMUTE, LOCK, CHECK, ENCUP, and ENCDN.
+ *	Modifying only the Tiva top-hat is preferable, but this results in moderately high-Z level shifting networks (on the order of 100K for the pull-downs).
+ *	Placing 5.8K (approx) resistors in parallel with the 47K pullups on each of the IC-901 signals allows the pull-downs on the top-hat to be sized at 10K.
+ *	This increases the max pullup current for the IC-901 resistors by a factor of 10 (resulting in 1mA for each signal when the input is grounded).  However,
+ *	this current only flows when a button or input is activated.  It is also a rarity that two or more inputs will activate at the same time and they also only
+ *	for a short time, so the aggregate impact of this should be minimal.  Swapping the 7805 linear regulator for a switching type greatly reduces the Pd of the
+ *	system which more than offsets the increase due to the pullups.
+ *
+ *	With the 7805 in place, the total Pd for the MCU section is 1.2W (this doesn't include the back-light LEDs) with 700mW dissipating in the 7805 itself.
+ *	With an 85% efficient switching regulator, the total Pd is about 588mW, with 88mW of that dissipating in the switcher.  Better than 50% improvement.
+ *	Replacing the dimmer transistor with a FET also reduces the system Pd.  These improvements don't impact SW, but they are noted here for reference.
+ *
+ *	Also noted here is the fact that the NVRAM used is now NRFND (7/30/23).  Gunna need to stock up to cover the top-hat PCBs I have.  Stupid end of life.
  *
  *******************************************************************/
 
@@ -37,12 +69,19 @@
 //  Accomplishes IC-901 Remote Controller function (replacing IC1 in the remote controller). Interfaces to original
 //		control IC footprint.  Minimal changes are foreseen to the basic control circuits.  The only notable modification
 //		is to convert the DIMMER circuit to a PWM capable switch (existing circuit is a two level linear circuit).
+//		Changes so far:
+//			* Remove components required to fit interposer PCB to IC-901 PCB
+//			* Replace IC6 with 5V switcher IC (located at the vacant BT1 footprint), jumper D1
+//			* Remove Q10 and jumper B to C (inverts DATA1)
+//			* change 47K pullups to 4.7K (5.4K//47K = 4.84K)
+//			* Remove R42.  Replace C16 with 100pF cap (0805)
+//			* PWM backlight: Q6 = NFET, R6 = 1K
 //
 //  UART0 is used for debug I/O.
 //  	Debug CLI is a simple maintenance/debug port (via UART1 @PA[1:0]) with the following core commands:
 //			VERS - interrogate SW version.
 //			See "cmd_fn.c" for CLI details
-//  UART2 is used for bluetooth I/O.
+//  UART2 is used for bluetooth I/O. {Likely, this requirement will be deprecated unless a BT module can be identified for use}
 //  	Bluetooth module communicates via UART0 @PA[7:6].  A future option to allow remote access to the
 //			radio control core.
 //  UART4 is used for microphone remote control (RXD only). 19200 baud, N81.
@@ -52,14 +91,15 @@
 //
 //	SSI0 (MISO/MOSI/CLK, 3MHz) connects the NVRAM device
 //	SSI1 (MOSI/CLK, 4800 baud) drives the DATA1 output
-//	SSI2 (MOSI/CLK, 1.875 MHz) drives the LCD controller chips
+//	SSI2 (MOSI/CLK, 100KHz MHz) drives the LCD controller chips
 //	SSI3 (MISO, 4800 baud) is driven by the DATA2 (async) input and is triggered by a GPIO edge interrupt
+//			{Must juggle the GPIO and SSI peripherals to be able to use the same pin for edge trigger and SSI input}
 //
 //	Comp0 detects the "UP" mic button (GND)
 //	Comp1 detects the "DN" mic button (470 ohm to GND)
 //		Since C0O and C1O will both activate for an "UP" event, code needs to condition "DN" detections to allow for an
 //		"UP" detection that may lag by as much as a couple of ms (worst case spec... the RC delay on this connection is about
-//		3us).
+//		300ns).
 //
 //	T0CCP0 drives the BEEP output
 //	T1CCP0 drives UART0 TX pacing
@@ -73,22 +113,26 @@
 //	M0PWM2 controls LED_RXS brightness
 //	M0PWM3 controls LCD backlight LED brightness
 //
-//	GPIO drives scan decoder and scan inputs for the RDU key interface (16 keys on a 2x8 matrix,
-//		and three keys on dedicated GPIO).
+//	GPIO drives scan decoder (inside the main.c app timer) and scan inputs for the RDU key interface (16 keys on a 2x8 matrix,
+//		three keys on dedicated GPIO, and two comparator inputs for up/dn). ENCup = PG0, ENCdn = PF4.
 //
 //  Interrupt Resource Map:
-//	*	Timer0A			PL4:		ISR SW gated 1KHz pulse output to drive piezo spkr (uses PWM and ISR to generate and gate off the beep)
-//	*	Timer1A			--			ISR UART1 serial pacing timer
-//		Timer2A			PF4:		ISR DATA2 async input start-bit alignment
-//	*	Timer3A			--			ISR Application timers & keyscan
+//		Timer0A			PL4:		ISR BEEP: SW gated 1KHz pulse output to drive piezo spkr (uses PWM and ISR to generate and gate off the beep)
+//		Timer0B			--			ISR app timer in main.c
+//		Timer1A			--			ISR UART1 serial pacing timer
+//		Timer1B			--			ISR bit-bang SPI timer (spi.c, deprecated)
+//		Timer2A			--			ISR DATA2 async input, start-bit alignment
+//		Timer2B			--			ISR LCD SSI pacing and blink timer
 //		GPIO FE			PQ3:		ISR (detects DATA2 start bit, starts Timer2A)
-//	*	UART0 			PA[1:0]:	ISR(RX) debug UART
-//		UART1			PB[1:0]:	ISR(RX) bluetooth I/O
-//	*	M0PWM(0-3)		PF0-3:		--- LED PWMs
-//		GPIO FE			PF4,PG0:	ISR Main dial (up/dn type), edge interrupts to count encoder pulses (debounce in Timer3A ISR)
-//		bbSSI			PD0, PD3:	LCD command/data comms.  Uses PD1, PD6, PE0, PE1, & PB7 (SSI3 can no longer be used due to GPIO constraints for MISO)
-//	*	SSI1			PF1:		ASO async output (4800 baud, 1 start, 30 bit + 1 stop (plus an implied stop bit)
-//	*	SSI3			PQ3:		ISR DATA2 async input
+//		UART0 			PA[1:0]:	ISR(RX) debug UART
+//		UART2			PA[7:6]:	ISR(RX) bluetooth I/O
+//		UART4			PK0:		ISR(RX) HM-133
+//		M0PWM(0-3)		PF0-3:		--- LED PWMs
+//		GPIO FE			PG0,PF4:	ISR Main dial (up/dn type), edge interrupts to count encoder pulses (debounce in Timer3A ISR?)
+//		SSI0			PA[5:2]:	NVRAM I/O
+//		SSI1			PE4,PB5:	DATA1 sync/async output, 4800 baud, 1 start, 40 bit (incl stop bits)
+//		SSI2			PD[3:0]:	LCD command/data comms.
+//		SSI3			PQ3:		--- DATA2 async input {ISR deprecated, Timer2A now handles reading the SSI data register}
 //
 //
 //
@@ -187,7 +231,7 @@ char	btbuf[100];						// temp buffer
 #define KBD_ERR 0x01
 #define KBD_BUFF_END 5
 U16		S4_stat;						// holds de-mux'd status of spare_S4 switch
-U16		kbd_buff[KBD_BUFF_END];			// keypad data buffer
+U32		kbd_buff[KBD_BUFF_END];			// keypad data buffer
 U8		kbd_hptr;						// keypad buf head ptr
 U8		kbd_tptr;						// keypad buf tail ptr
 U8		kbd_stat;						// keypad buff status
@@ -232,23 +276,28 @@ uint64_t biglcd[] = { (((uint64_t)(LCD_CE1))<<56) | 0x00000000000014,
 					  (((uint64_t)(LCD_CE2))<<56) | 0xFFE3B087B3D7D4,
 					  (((uint64_t)(LCD_CE2))<<56) | 0x4F57F4CED1F801
 };
+uint64_t blanklcd[] = { (((uint64_t)(LCD_CE1))<<56) | 0x00000000000004,
+		               (((uint64_t)(LCD_CE1))<<56) | 0x00000000000001,
+					   (((uint64_t)(LCD_CE2))<<56) | 0x00000000000004,
+					   (((uint64_t)(LCD_CE2))<<56) | 0x00000000000001
+};
 uint64_t blinklcd[] = { (((uint64_t)(LCD_CE1))<<56) | 0xffffffffffffff,
 		                (((uint64_t)(LCD_CE1))<<56) | 0xffffffffffffff,
 					    (((uint64_t)(LCD_CE2))<<56) | 0xffffffffffffff,
-					    (((uint64_t)(LCD_CE2))<<56) | 0xfffffffffff7ff
+					    (((uint64_t)(LCD_CE2))<<56) | 0xffffffffffffff
 };
 
-char test_m[] = {"1KE0FF815" };
-char test_s0[] = {"000000000" };
-char test_s1[] = {"011111110" };
-char test_s2[] = {"022222220" };
-char test_s3[] = {"033333330" };
-char test_s4[] = {"044444440" };
-char test_s5[] = {"055555550" };
-char test_s6[] = {"066666660" };
-char test_s7[] = {"077777770" };
-char test_s8[] = {"088888880" };
-char test_s9[] = {"099999990" };
+char test_m[]  = { " LCD OK  " };
+char test_s0[] = { "000000000" };
+char test_s1[] = { "011111110" };
+char test_s2[] = { "022222220" };
+char test_s3[] = { "033333330" };
+char test_s4[] = { "044444440" };
+char test_s5[] = { "055555550" };
+char test_s6[] = { "066666660" };
+char test_s7[] = { "077777770" };
+char test_s8[] = { "088888880" };
+char test_s9[] = { "099999990" };
 
 //-----------------------------------------------------------------------------
 // Local Prototypes
@@ -257,7 +306,7 @@ char test_s9[] = {"099999990" };
 void Timer_Init(void);
 void Timer_SUBR(void);
 char *gets_tab(char *buf, char *save_buf[3], int n);
-char kp_asc(U16 keycode);
+char kp_asc(U32 keycode);
 
 //*****************************************************************************
 // main()
@@ -278,7 +327,7 @@ char kp_asc(U16 keycode);
 //*****************************************************************************
 int main(void){
 	volatile uint32_t ui32Loop;
-	uint32_t i;
+//	uint32_t i;
 //    uint8_t	tempi;			// tempi
     char	buf[CLI_BUFLEN];	// command line buffer
     char	rebuf0[RE_BUFLEN];	// re-do buffer#1
@@ -315,11 +364,11 @@ int main(void){
 	wait(20);											// a bit more delay..
 
 	set_seg(blinklcd, LBLINK);
-	sputs_lcd(test_m, 2);
-//	set_seg(biglcd, 1);
-//	lcd_send(1);
+	set_seg(blanklcd, 1);
+	mputs_lcd(test_m, 2);
+	lcd_send(1);
 	TIMER2_IMR_R |= TIMER_IMR_TBTOIM;					// enable timer intr
-	wait(2000);
+	wait(20);
 
 /*	ssmet(0, 0);
 	wait(500);
@@ -363,6 +412,12 @@ int main(void){
     lcd_send(lcd_tests3, 1);
     for(i=0; i<100; i++);
     lcd_send(lcd_tests4, 1);*/
+
+/*	for(i=0; i<8; i++){
+		send_so((uint64_t)0xa98765432e);
+		wait(100);
+		wait(2);
+	}*/
 
     do{													// outer-loop (do forever, allows soft-restart)
         rebufN[0] = rebuf0;								// init CLI re-buf pointers
@@ -632,16 +687,16 @@ char *gets_tab(char *buf, char *save_buf[], int n){
 // process_IO() processes system I/O
 //-----------------------------------------------------------------------------
 char process_IO(U8 flag){
-	uint32_t	i;
+//	uint32_t	i;
 
 	// process IPL init
 	if(flag == 0xff){									// perform init/debug fns
 		// init LCD
 //		init_lcd();
 		ptt_mode = 0xff;								// force init
-//		process_SOUT(flag);								// ! SOUT init must execute before SIN init !
-//		process_SIN(flag);
-//		process_UI(flag);
+		process_SOUT(flag);								// ! SOUT init must execute before SIN init !
+		process_SIN(flag);
+		process_UI(flag);
 //		process_CCMD(flag);
 	}
 //	process_SIN(0);
@@ -948,7 +1003,7 @@ void wait2(U16 waitms)
 //	if delay expires, return TRUE, else return FALSE
 //-----------------------------------------------------------------------------
 U8 wait_busy0(U16 delay){
-	U8 loopfl = TRUE;
+//	U8 loopfl = TRUE;
 
 //    waittimer = delay;
 //    while(loopfl){
@@ -966,7 +1021,7 @@ U8 wait_busy0(U16 delay){
 //	if delay expires, return TRUE, else return FALSE
 //-----------------------------------------------------------------------------
 U8 wait_busy1(U16 delay){
-	U8 loopfl = TRUE;
+//	U8 loopfl = TRUE;
 
 /*	wait_busy0(delay);
 	waittimer = delay;
@@ -1047,7 +1102,7 @@ U8 got_key(void){
 //-----------------------------------------------------------------------------
 char get_key(void){
 	char	rtn = '\0';	// return value
-	U16		j;
+	U32		j;
 
 	if(kbd_hptr != kbd_tptr){
 		j = kbd_buff[kbd_tptr++];						// get keypad code
@@ -1061,8 +1116,16 @@ char get_key(void){
 
 //-----------------------------------------------------------------------------
 // convert keycodes to ASCII
-//	keycode = [xccc|caaa] c = column nybble (GND 1of4), a = row addr, x = don't
-//	care (mask to 0).
+// keycode is the aggregate bit-map of all the key inputs:
+//	[15 ................................................. 0]
+//	[x][comp1][comp0][lck][smut][chek]PortM[7:0][col0][col1]
+//	      dn    up    PK7  PK6   PG1    PM[7:0]  PK5   PK4
+//	dn/up = MU_D2 inputs
+//	PM is the 8b matrix input for the majority of keys
+//
+//	PM[7:0]+COL[1:0] are the scanning keypad portion of the code map.
+//	Other discrete keys are included: MU_D2, LOCK, SMUTE, CHECK.  The assumption is
+//	that none of the discrete keys will be pressed when the there is a scanned key pressed.
 //
 // keypad LUT.  Keycode is constructed by converting 1of4 col code to 2 bit binary,
 //	then left shifting 2 bits and combining the codes to create a continuous index
@@ -1070,18 +1133,19 @@ char get_key(void){
 //
 // Return chr == '-' indicates hold time reached.
 // Return chr == '^' indicates release.
-// Lmkrr rrrrrrcc ==> bitmap of composite reg
+// duLmkrr rrrrrrcc ==> bitmap of composite reg
 
-#define	KBD_MAXCODE			22			// max # keys
+#define	KBD_MAXCODE			26			// max # keys
 
-char keychr_lut[] = { Qdnchr, Qupchr, HILOchr, MHZchr, MODEchr, BANDchr, CALLchr, VMchr,  CHKchr, SMUTEchr, LOCKchr,
-					  Vdnchr, Vupchr, Tchr,    TSchr,  SETchr,  MWchr,   MSchr,   SUBchr, CHKchr, SMUTEchr, LOCKchr };
+//						PM0 - - - - - - - - - - - - - - - -- - - - - - - - - - - - PM7      PG1     PK6       PK7     COMP1    COMP0
+char keychr_lut[] = { Vdnchr, Vupchr, Tchr,    TSchr,  SETchr,  MWchr,   MSchr,   SUBchr, CHKchr, SMUTEchr, LOCKchr, MUP2chr, MDN2chr,
+					  Qdnchr, Qupchr, HILOchr, MHZchr, MODEchr, BANDchr, CALLchr, VMchr,  CHKchr, SMUTEchr, LOCKchr, MUP2chr, MDN2chr };
 		// 900 buttons not on 901 TONEchr DUPchr, VFOchr, MRchr
 //-----------------------------------------------------------------------------
-char kp_asc(U16 keycode){
-	U16		ii;			// temps
-	U16		jj;
-	U16		kk;
+char kp_asc(U32 keycode){
+	U32		ii;			// temps
+	U32		jj;
+	U32		kk;
 	U8		j;
 	char	h = '\0';	// hold flag register
 	char 	c = '\0';	// ascii temp, default to invalid char (null)
@@ -1111,6 +1175,9 @@ char kp_asc(U16 keycode){
 	}
 	if(j <= KBD_MAXCODE){				// if valid, pull ascii from LUT
 		c = keychr_lut[j-1] | h;		// combine with hold flag
+	}
+	if(!c){ //~!!!
+		j++;
 	}
 	return c;
 }
@@ -1550,8 +1617,8 @@ void Timer0B_ISR(void){
 //		U16	t2_temp;				// temp
 //		U32	t2_temp32;
 //static	U8	keydb_tmr;
-		U16	key_temp;				// keypad temp
-		U16	jj;
+		U32	key_temp;				// keypad temp
+		U32	jj;
 static	U8	kpscl;					// keypad prescale
 static	U8	kp_state;				// keypad state machine reg
 static	U16	kp_keypat;				// key-down pattern
@@ -1595,11 +1662,23 @@ static	U16	key_last;				// last key
 		// kbup_flag == true if key is released (app needs to clear)
 		// Row address to switch matrix is only advanced when there is no keypress (so, this alg. doesn't do
 		// key rollover).
+		// key_temp is the aggregate map of all the key inputs:
+		//	[15 .................................................. 0]
+		//	[x][comp1][comp0][lck][smut][check]PortM[7:0][col0][col1]
+		//	      dn    up    PK7  PK6   PG1    PM[7:0]  PK5   PK4
+		//	dn/up = MU_D2 inputs (comparator 1 = dn, comparator 0 = up)
+		//	PM is the 8b matrix input for the majority of keys (P122-P130 on IC901 controller)
+		// key_temp is now a U32 to allow room for the hold and release bits (plus future growth).  This has been
+		//	rippled up the food-chain to the other resources which are impacted. --jmh 07/30/23
 
 		if(--kpscl == 0){
 			kpscl = KEY_PRESCALE;
-		    key_temp = ((U16)(GPIO_PORTK_DATA_R & KB_NOKEYK) << 5) | ((U16)(GPIO_PORTM_DATA_R & KB_NOKEYM) << 2) |
-						((U16)(GPIO_PORTK_DATA_R & KB_NOKEYCOL) >> 4) | ((U16)(GPIO_PORTG_DATA_R & KB_NOKEYG) << 9);
+			// capture MU_D2 and exclude "dn" if "up" is active
+			jj = ((U32)(~COMP_ACSTAT0_R & 0x02) << 12) | ((U32)(~COMP_ACSTAT1_R & 0x02) << 13);
+			if(!(jj & KB_UPKEY)) jj |= KB_DNKEY;
+			// construct composite key bitmap
+		    key_temp = ((U32)(GPIO_PORTK_DATA_R & KB_NOKEYK) << 5) | ((U32)(GPIO_PORTM_DATA_R & KB_NOKEYM) << 2) |
+						((U32)(GPIO_PORTK_DATA_R & KB_NOKEYCOL) >> 4) | ((U32)(GPIO_PORTG_DATA_R & KB_NOKEYG) << 9) | jj;
 
 			jj = key_temp & ~(COL1_BIT|COL0_BIT);			// mask off col bits
 			switch(kp_state){

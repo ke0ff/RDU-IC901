@@ -132,8 +132,8 @@ struct vfo_struct {
 #define SIN_DSQ_F		(SIN_DSQA|SIN_DSQB)			// tone detected
 #define SIN_DSQA_F		(SIN_DSQA)					// tone detected
 #define SIN_DSQB_F		(SIN_DSQB)					// tone detected
-#define SIN_MCK_F		(SIN_MCK)					// MIC u/d button change
-#define SIN_SEL_F		(SIN_SEL11|SIN_SEL12|SIN_SEL21|SIN_SEL22)	// OPT
+#define SIN_MCK_F		(SIN_MUP|SIN_MDN)					// MIC u/d button change
+#define SIN_SEL_F		(SIN_TONE|SIN_OPT1|SIN_OPT2|SIN_OPT3)	// OPT
 #define	SIN_VFOM_F		0x00010000L					// vfo change flag
 #define	SIN_VFOS_F		0x00020000L					// vfo change flag
 #define SIN_SINACTO_F	0x00040000L					// SIN timeout has occurred

@@ -80,7 +80,7 @@ uint8_t send_spi3(uint8_t data)
 //	Uses ssiflag trigger from Timer1B_ISR to apply the clock period to each edge
 //-----------------------------------------------------------------------------
 U8 shift_spi(U8 dato){
-	U8	i;
+//	U8	i;
 	U8	datain = 0;
 
 /*	for(i=0x80;i;i >>= 1){

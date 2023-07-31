@@ -31,16 +31,16 @@
 
 void ssi0_init(void){
 
-	SYSCTL_RCGCSSI_R |= SYSCTL_RCGCSSI_R0;			// activate SSI0
-	GPIO_PORTA_AHB_AFSEL_R |= NVMISO|NVMOSI|NVCLK;	// enable alt funct on PQ0-3
+	SYSCTL_RCGCSSI_R |= SYSCTL_RCGCSSI_R0;				// activate SSI0
+	GPIO_PORTA_AHB_AFSEL_R |= NVMISO|NVMOSI|NVCLK;		// enable alt funct on PQ0-3
 	GPIO_PORTA_AHB_PCTL_R = GPIO_PCTL_PA2_SSI0CLK | GPIO_PCTL_PA4_SSI0XDAT0 | GPIO_PCTL_PA5_SSI0XDAT1;	//0x0000eeee;
-	GPIO_PORTA_AHB_AMSEL_R &= ~(NVMISO|NVMOSI|NVCLK); // disable analog functionality on PQ
-	SSI0_CR1_R = 0;									// disable SSI, master mode
-													// BR for NVRAM = 1 MHz
-													// SSI0CLK = SYSCLK / (CPSDVSR * (1 + SCR)) { 2 <= CPSDVSR <= 254, even only)
+	GPIO_PORTA_AHB_AMSEL_R &= ~(NVMISO|NVMOSI|NVCLK);	// disable analog functionality on PQ
+	SSI0_CR1_R = 0;										// disable SSI, master mode
+														// BR for NVRAM = 1 MHz
+														// SSI0CLK = SYSCLK / (CPSDVSR * (1 + SCR)) { 2 <= CPSDVSR <= 254, even only)
 	SSI0_CPSR_R = SSI0_DVSR;
-	SSI0_CR0_R = (SSI0_SCR << 8) | SSI_CR0_DSS_8;	// SCR = [15:8], SPH[7] = 0, SPO[6] = 0 Freescale, DSS = 8-bit data
-	SSI0_CR1_R |= SSI_CR1_SSE;						// enable SSI
+	SSI0_CR0_R = (SSI0_SCR << 8) | SSI_CR0_DSS_8;		// SCR = [15:8], SPH[7] = 0, SPO[6] = 0 Freescale, DSS = 8-bit data
+	SSI0_CR1_R |= SSI_CR1_SSE;							// enable SSI
 	return;
 }
 
@@ -50,9 +50,9 @@ void ssi0_init(void){
 
 uint8_t shift_SSI0(uint8_t sdata){
 
-	while(!(SSI0_SR_R & SSI_SR_TNF));				// SSI Transmit FIFO Not Full
-	SSI0_DR_R = sdata;                				// data out, no reply
-	while(!(SSI0_SR_R & SSI_SR_RNE));				// wait for RX flag to catch up (should never have to wait here long)
+	while(!(SSI0_SR_R & SSI_SR_TNF));					// SSI Transmit FIFO Not Full
+	SSI0_DR_R = sdata;                					// data out, no reply
+	while(!(SSI0_SR_R & SSI_SR_RNE));					// wait for RX flag to catch up (should never have to wait here long)
 	return SSI0_DR_R;
 }
 
@@ -63,7 +63,7 @@ uint8_t shift_SSI0(uint8_t sdata){
 uint8_t read_SSI0(uint8_t dataw){
 	volatile uint8_t	i;
 
-	while((SSI0_SR_R & SSI_SR_RNE)){				// failsafe... clear out buffer
+	while((SSI0_SR_R & SSI_SR_RNE)){					// failsafe... clear out buffer
 		i = SSI0_DR_R;
 	}
 	i = shift_SSI0(dataw);								// send data (ye must send, that ye may ra-ceive...)
@@ -193,7 +193,7 @@ uint8_t rw8_nvr(uint32_t addr, uint8_t dataw, uint8_t mode)
 	if(mode & CS_OPEN){
 		if(mode & CS_WRITE){
 			i = WRITE;
-			wen_nvr();							// have to enable writes for every cycle
+			wen_nvr();									// have to enable writes for every cycle
 		}else{
 			i = READ;
 		}

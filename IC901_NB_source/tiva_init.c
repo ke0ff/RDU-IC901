@@ -41,6 +41,7 @@
 #include "SSI1.h"
 #include "SSI2.h"
 #include "SSI3.h"
+#include "sio.h"
 #include "nvic.h"
 
 //-----------------------------------------------------------------------------
@@ -200,14 +201,10 @@ U16 proc_init(U32 sys_clk)
 //	timer1A_init(sys_clk);							// init serial pacing isr
 //	timer1B_init(sys_clk);							// KPU long baseline timer intr
 
-	// init timer2A for 350KHz output (no intr)
-//	timer2A_init(sys_clk);
-
 	ssi0_init();									// init SSI modules
-//	ssi1_init();
+	init_sio(sys_clk, INIT_SIN);					// init DATA1 & DATA2 SSI modules (SSI1 & SSI3)
 	ssi2_init();									// LCD ssi init
 	timer2B_init(sys_clk);							// LCD blink timer
-//	ssi3_init();
 
 	// init LED PWMs (M0) on PF0 - PF3
 	SYSCTL_RCGCPWM_R |= SYSCTL_RCGCPWM_R0;
@@ -381,21 +378,22 @@ void timer1B_init(U32 sys_clk){
 }
 
 //*****************************************************************************
-//	???? Timer2A drives a 350KHz square wave clock for the TLC14 filter chip
+//	DATA2 1/2bit timer
 //*****************************************************************************
 void timer2A_init(U32 sys_clk){
 	volatile U32	ui32Loop;
 
-	SYSCTL_RCGCTIMER_R |= SYSCTL_RCGCTIMER_R2;		// enable timer 2 clock domain
+	// init Timer2A (Count dn, periodic -- inputs IC-900 async data)
+	SYSCTL_RCGCTIMER_R |= SYSCTL_RCGCTIMER_R2;
 	ui32Loop = SYSCTL_RCGCGPIO_R;
-//	GPIO_PORTM_AFSEL_R |= 0x01;						// enable AF for PM0 (timer2)
-//	GPIO_PORTM_PCTL_R = 0x03;
-	TIMER2_CTL_R &= ~(TIMER_CTL_TAEN);				// disable timer
+	TIMER2_CTL_R &= ~(TIMER_CTL_TAEN);									// disable timer
 	TIMER2_CFG_R = TIMER_CFG_16_BIT; //0x4; //0;
-	TIMER2_TAMR_R = TIMER_TAMR_TAMR_PERIOD | TIMER_TAMR_TCACT_TOGGLE;
-	TIMER2_TAPR_R = TIMER2_PS;
-	TIMER2_TAILR_R = (uint16_t)(sys_clk/(2 * TIMER2_FREQ * (TIMER2_PS + 1)));
-	TIMER2_CTL_R |= (TIMER_CTL_TAEN);				// enable timer
+	TIMER2_TAMR_R = TIMER_TAMR_TAMR_PERIOD;
+	TIMER2_TAPR_R = TIMER2A_PS;
+	TIMER2_TAILR_R = (uint16_t)(SIN_START_BIT_TIME);
+	TIMER2_IMR_R = TIMER_IMR_TATOIM;									// enable timer intr
+//	TIMER2_CTL_R |= (TIMER_CTL_TAEN);									// enable timer
+	TIMER2_ICR_R = TIMER2_MIS_R;										// clear any flagged ints
 }
 
 //*****************************************************************************

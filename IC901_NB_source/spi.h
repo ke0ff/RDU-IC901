@@ -69,7 +69,7 @@ void open_spi(uint8_t addr);
 void close_spi(void);
 void spi1_clean(void);
 void lcd_cmd(U8 cmd);
-void send_so(uint32_t data);
+//void send_so(uint32_t data);
 // NVRAM Fns
 void close_nvr(void);
 void wen_nvr(void);
