@@ -2960,7 +2960,7 @@
 #define SSI_CR0_DSS_14          0x0000000D  // 14-bit data
 #define SSI_CR0_DSS_15          0x0000000E  // 15-bit data
 #define SSI_CR0_DSS_16          0x0000000F  // 16-bit data
-#define SSI_CR0_SCR_S           8
+#define SSI_CR0_SCR_S           8			// bit shifts to align to SCR from right-justified value
 
 //*****************************************************************************
 //
