@@ -57,15 +57,15 @@
 // local declarations
 //-----------------------------------------------------------------------------
 
-U32	sin_addr0;							// holding registers for SIN data (addr 0-3)
-U32	sin_addr1;
-U32	sin_addr2;
-U32	sin_addr3;
-U32	sin_flags;							// bitmapped activity flags that signal changed data
+U16	sin_addr0;							// holding registers for SIN data (addr 0-3)
+U16	sin_addr1;
+U16	sin_addr2;
+U16	sin_addr3;
+U16	sin_flags;							// bitmapped activity flags that signal changed data
 										// addr1 and 0 are muxed into a single 32 bit flag (only 16 bits of data are ever transferred)
-U8	sout_flags;							// signal for SOUT changes
-U8	ux_present_flags;					// bitmapped "present" (AKA, "installed") flags.
-U32	ptt_mem;							// PTT memory
+U16	sout_flags;							// signal for SOUT changes
+U16	ux_present_flags;					// bitmapped "present" (AKA, "installed") flags.
+U16	ptt_mem;							// PTT memory
 // **************************************************************
 // these data structures are mirrored in a SW shadow NVRAM (HIB RAM)
 //	each band module has its own cluster of data for frq, offset, etc...
@@ -108,8 +108,8 @@ U8	vol_s;								// sub vol
 U8	bandid_m;							// bandid for main (index into above data structures)
 U8	bandid_s;							// bandid for sub (index into above data structures)
 
-U8	bandoff_m;							// band-off registers
-U8	bandoff_s;
+U16	bandoff_m;							// band-off registers corresponds to band-present bitmap
+U16	bandoff_s;
 
 U32	vfot;								// temp vfo used for calculations and TX frequency
 U32	vfotr;								// tr vfo
@@ -132,40 +132,53 @@ U32 mem_band[] = { ID10M_MEM, ID6M_MEM, ID2M_MEM, ID220_MEM, ID440_MEM, ID1200_M
 //U32 mem_band[1] = { ID10M_MEM };
 // mem name strings
 char memname[NUM_VFOS][MEM_NAME_LEN];
+// buffer for up/dn signals
+#define	UD_MAX	8
+char	ud_buf[UD_MAX];
+U8		ud_head;
+U8		ud_tail;
 
 // **************************************************************
 
 #define	PLL_BUF_MAX	14
-U32	pll_buf[PLL_BUF_MAX];				// PLL data buffer
-U8	pll_ptr;							// pll_buf index
+uint64_t	pll_buf[PLL_BUF_MAX];				// PLL data buffer
+U8			pll_ptr;							// pll_buf index
 
 // reset units
-#define	SO_INIT_LENA	2
-U32	so_inita[] = { 0x00000000,
-				   0x3F000818,
-				   0x3D220050, 					// squ left (main)
-				   0x3D020048,					// squ right
-				   0x3E201050,					// vol left	(main)
-				   0x3E001048,					// vol right
-				 };
+//#define	SO_INIT_LENA	2
+uint8_t	so_inita[] = {	0x00, 0x73, 0x09, 0x12, 0x1b, 0x24,
+						0x36, 0x38, 0x40, 0x48, 0x50, 0x58 };
 
-// sout data to scan for installed UX units
-#define	SO_INIT_LENB	7
-U32	so_initb[] = { 0x08000000, 0x10000000, 0x18000000, 0x20000000, 0x28000000, 0x30000000, 0x00000000 };
+#define	SO_INITA_LEN	(sizeof(so_inita)/sizeof(uint8_t))	// # elements in inita array
+// initA frame constants
+#define	SO_INITA_0		0x7000000000			// base reset frame
+#define	SO_INITA_1		0x000000001F			// band search root frame
+#define	SO_INITA_R91_0	0x6000000000			// S91A 1st search frame
+#define	SO_INITA_R91_1	0x000000007F			// S91A 2nd search frame
+#define	INITA_WAIT		3000					// ms debug value.  Real value SB 60 ms
 
-// 2m/440 and base unit init (debug patch)
-#define	SO_INIT_LENC	5
-U32	so_initc[] = {
-				   0x3D220050, 					// squ left (main)
-				   0x3D020048,					// squ right
-				   0x3E201050,					// vol left	(main)
-				   0x3E001048,					// vol right
-				   0x3CA000EA					// tone enc
-				   };
+uint64_t so_initb[] = { 0x748000181F,
+						0x750001091F,
+						0x609008121F,
+						0x609008111F,
+						0x760040811F,
+						0x36B000143F,
+						0x36B000143F,
+						0x36B00123DF,
+						0x36B000001F,
+						0x36B000007F,
+						0x36B00001FF,
+						0x74C000181F,
+						0x750040421F,
+						0x760010221F };
+
+#define	SO_INITB_LEN	(sizeof(so_initb)/sizeof(uint64_t))	// # elements in initb array
+#define	SO_INIT_PACE	10						// pacing value for SOUT words
 
 // **************************************************************
 // local Fn declarations
 
+char get_updn2(void);
 U8 get_bandid(U32 freqMM);
 U8 get_busy(void);
 
@@ -184,18 +197,36 @@ void init_radio(void){
 	U8	usnbuf[16];		// User SN buffer
 //	char	ibuf[25];	// sprintf/putsQ debug patch !!!
 
+	putsQ("BaseINIT...");
 	wait(50);
-	// send init array 1 (reset)
-	for(i=0; i<SO_INIT_LENA; i++){						// do base module reset
-		send_so(so_inita[i]);
-		wait(SIN_PACE_TIME);
-	}
-	// send init array 2 (UX module query)
+	ud_head = 0;
+	ud_tail = 0;
 	ux_present_flags = 0;								// start with no modules
-	flush_sin();										// clear SIN buffer
-	wait(15);
-	putsQ("UXsch:");
-	for(i=0, j=0x01; i<(SO_INIT_LENB-1); i++, j<<=1){
+	// send init array 1 (reset)
+	send_so(SO_INITA_0);
+	for(i=0; i<SO_INITA_LEN; i++){						// do base module reset
+		send_so(SO_INITA_1 | (so_inita[i] << 16));
+		wait(SO_INIT_PACE);
+	}
+	send_so(SO_INITA_R91_0);
+	send_so(SO_INITA_R91_1);
+	// send init array 2 (UX module query)
+	set_wait(INITA_WAIT);
+	i = 1;
+	do{
+		// process input until timeout or valid data received
+		process_SIN(0);
+		// data valid if non-zero AND the "0" SIN0_ALL bits are zero in the flags register
+		if(ux_present_flags && !(ux_present_flags & ~(SIN0_ALL | SIN0_STOP))){
+			i = 0;
+		}
+	}while(is_wait() && i);
+	putsQ("RadioINIT...");
+	for(i=0; i<SO_INITB_LEN; i++){						// do base module baseline ... this is parrot data, a real baseline needs to be written using actual radio settings
+		send_so(so_initb[i]);
+		wait(SO_INIT_PACE);
+	}
+/*	for(i=0, j=0x01; i<(SO_INITB_LEN-1); i++, j<<=1){
 		send_so(so_initb[i]);							// send a query message to each possible module
 		set_wait(20);
 		do{
@@ -212,7 +243,7 @@ void init_radio(void){
 			}
 		}while(is_wait() && !k);
 	}
-	ux_present_flags &= IDALL_B;						// mask known modules
+	ux_present_flags &= IDALL_B;						// mask known modules*/
 	// !!! need to trap exceptions here if only 1 or no modules present
 	//
 	// send init array 3 (base init)					// !!! this needs to get deprecated...
@@ -405,10 +436,10 @@ void init_radio(void){
 // process_SIN() processes SIN change flags
 //-----------------------------------------------------------------------------
 void  process_SIN(U8 cmd){
-	U32	sin_data;
-	U32	sin_addrs;
-	U32	ii;				// temp
-	U32 tt;
+	U16	sin_data;
+	U16	sin_addrs;
+	U16	ii;				// temp
+	U16 tt;
 	char	dbuf[35];	// !!! debug buff
 	static U32 lerr;
 
@@ -424,30 +455,38 @@ void  process_SIN(U8 cmd){
 		ptt_mem = 0x10L;
 	}else{												// normal (run) branch
 		if(got_sin()){
+			sin_time(SIN_ACTIVITY);						// ping SIN activity timer
 			sin_data = get_sin();						// get'n check for SIN data
 			clr_sys_err(NO_B_PRSNT);					// clear LOS error
 			sin_flags &= ~SIN_SINACTO_F;				// clear timeout error
 			sin_addrs = sin_data & SIN_ADDR_MASK;		// separate address from data payload
 			switch(sin_addrs){							// process SIN data based on addr
 			case SIN_ADDR_INIT:				// ADDR 0 - IPL init results (modules present)
+				sin_addr0 = sin_data;					// store new band present data
+				ux_present_flags = sin_data;
 				break;
 
 			case  SIN_ADDR_PRIME:			// ADDR 1 - SRF and COS
 				if(sin_data != sin_addr1){				// if data is new (different == new)
 					// process new addr1 data ... calculate change flags
 					ii = (sin_data ^ sin_addr1) & SIN1_DATA;
-					sin_flags |= ii;
+					tt = 0;
+					if(ii & SIN_SRFA) tt |= SIN_SRFM_CF;
+					if(ii & SIN_SRFB) tt |= SIN_SRFS_CF;
+					ii >>= SIN1_CF_SHR;
+					ii &= ~(SIN_SRFM_CF | SIN_SRFS_CF);
+					sin_flags |= ii | tt;				// store change flags
 					sin_addr1 = sin_data;				// store new data
 				}
 				break;
 
 			case SIN_ADDR_SPRDC:			// ADDR 2 - operator discretes (UP/DN/PTT) and tone decode
 				// process ADDR == 0 data
-				if(sin_data != sin_addr1){				// if data is new (different == new)
+				if(sin_data != sin_addr2){				// if data is new (different == new)
 					// process new addr0 data ... calculate change flags
-					ii = ((sin_data ^ sin_addr2) & SIN2_DATA);
+					ii = ((sin_data ^ sin_addr2) & SIN2_DATA) << SIN2_CF_SHL;
 					sin_flags |= ii;
-					sin_addr1 = sin_data;
+					sin_addr2 = sin_data;
 				}
 				break;
 
@@ -456,9 +495,11 @@ void  process_SIN(U8 cmd){
 					// process new addr0 data ... calculate change flags
 					ii = (((sin_data ^ sin_addr3) & SIN3_DATA));
 					if(ii & SIN_CODE_MASK){
-						ii |= SIN_CODE_CHANGE;
+						sin_flags |= SIN_CODE_CF;
 					}
-					sin_flags |= (ii & (U32)(SIN_CODE_CHANGE | SIN_AB)) >> CHANGE3_ALIGN;
+					if(ii & SIN_AB){
+						sin_flags |= SIN_AB_CF;
+					}
 					sin_addr3 = sin_data;
 				}
 				break;
@@ -502,8 +543,8 @@ U8 process_SOUT(U8 cmd){
 	static	U8	last_msqu;
 	static	U8	last_svol;
 	static	U8	last_ssqu;
-			U32 ii;
-			U32* pptr;			// pointer into SOUT buffer
+			U16 ii;
+			uint64_t* pptr;			// pointer into SOUT buffer
 //			char dgbuf[30];		// !!! debug sprintf/putsQ buffer
 
 	if(cmd == 0xff){								// initial program load (reset) branch
@@ -555,7 +596,7 @@ U8 process_SOUT(U8 cmd){
 					pll_ptr = 0;														// enable data send
 //					sprintf(dgbuf,"sinf: %08x",sin_flags); //!!!
 //					putsQ(dgbuf);
-					sin_flags &= ~SIN_SEND_F;											// clear the signal
+					sin_flags &= ~SIN_SEND_CF;											// clear the signal
 					k = 0xff;															// processing...
 				}else{
 					// process sout signals
@@ -1000,9 +1041,10 @@ U32  fetch_sin(U8 addr){
 // read_sin_flags() returns or clears the change flags
 //-----------------------------------------------------------------------------
 U32  read_sin_flags(U32 flag){
+	U32	i = sin_flags;
 
 	if(flag) sin_flags &= ~flag;
-	return sin_flags;
+	return i;
 }
 
 //-----------------------------------------------------------------------------
@@ -1023,37 +1065,37 @@ void  update_radio_all(U8 vector){
 	switch(vector){
 	case UPDATE_ALL:
 	default:
-		sin_flags |= SIN_SQSM_F|SIN_SQSS_F|SIN_MSRF_F|SIN_SSRF_F|SIN_SEND_F|SIN_DSQA_F|SIN_DSQB_F|SIN_SEL_F|SIN_VFOM_F|SIN_VFOS_F;
+		sin_flags |= SIN_SQSM_CF|SIN_SQSS_CF|SIN_SRFM_CF|SIN_SRFS_CF|SIN_SEND_CF|SIN_DSQA_CF|SIN_DSQB_CF|SIN_SEL_CFM|SIN_VFOM_CF|SIN_VFOS_CF;
 		sout_flags |= SOUT_MSQU_F|SOUT_SSQU_F|SOUT_MVOL_F|SOUT_SVOL_F|SOUT_VFOS_F|SOUT_VFOM_F;
 		break;
 
 	case MAIN_ALL:
-		sin_flags |= SIN_SQSM_F|SIN_MSRF_F|SIN_SEND_F|SIN_DSQA_F|SIN_SEL_F|SIN_VFOM_F;
+		sin_flags |= SIN_SQSM_CF|SIN_SRFM_CF|SIN_SEND_CF|SIN_DSQA_CF|SIN_SEL_CFM|SIN_VFOM_CF;
 		sout_flags |= SOUT_MSQU_F|SOUT_MVOL_F|SOUT_VFOM_F;
 		break;
 
 	case SUB_ALL:
-		sin_flags |= SIN_SQSS_F|SIN_SSRF_F|SIN_DSQB_F|SIN_VFOS_F;
+		sin_flags |= SIN_SQSS_CF|SIN_SRFS_CF|SIN_DSQB_CF|SIN_VFOS_CF;
 		sout_flags |= SOUT_SSQU_F|SOUT_SVOL_F|SOUT_VFOS_F;
 		break;
 
 	case MAIN_FREQ:
-		sin_flags |= SIN_VFOM_F;
+		sin_flags |= SIN_VFOM_CF;
 		sout_flags |= SOUT_VFOM_F;
 		break;
 
 	case SUB_FREQ:
-		sin_flags |= SIN_VFOS_F;
+		sin_flags |= SIN_VFOS_CF;
 		sout_flags |= SOUT_VFOS_F;
 		break;
 
 	case MAIN_VQ:
-		sin_flags |= SIN_SQSM_F|SIN_MSRF_F|SIN_DSQA;
+		sin_flags |= SIN_SQSM_CF|SIN_SRFM_CF|SIN_DSQA_CF;
 		sout_flags |= SOUT_MSQU_F|SOUT_MVOL_F;
 		break;
 
 	case SUB_VQ:
-		sin_flags |= SIN_SQSS_F|SIN_SSRF_F|SIN_DSQB;
+		sin_flags |= SIN_SQSS_CF|SIN_SRFS_CF|SIN_DSQB_CF;
 		sout_flags |= SOUT_SSQU_F|SOUT_SVOL_F;
 		break;
 	}
@@ -1086,18 +1128,15 @@ void  force_push_radio(void){
 //	returns 0 if not busy, 1 if busy detected, 0xff if no data
 //-----------------------------------------------------------------------------
 U8  get_busy(void){
-	U8	bzy = 0xff;
-	U32	ii;
+	U8	bzy = 0;
 
-	if(got_sin()){
-		ii = get_sin();
-/*		if(ii && !(ii & SIN_ADDR) && !(ii & SIN_BUSY)){
+	set_wait(20);
+	do{
+		process_SIN(0);
+		if(sin_addr1 & SIN_BUSY){
 			bzy = 1;
-		}else{
-			bzy = 0;
-//			putchar_bQ('-'); //!!! debug
-		}*/
-	}
+		}
+	}while(is_wait() && !bzy);
 	return bzy;
 }
 
@@ -1315,16 +1354,16 @@ U8 adjust_toneon(U8 mainsub, U8 value){
 //	is_tx		a boolean flag to indicate TX (true) or RX (false)
 //	is_main		true for main band, false for sub band
 //-----------------------------------------------------------------------------
-U32* setpll(U8 bid, U32* plldata, U8 is_tx, U8 is_main){
+uint64_t* setpll(U8 bid, uint64_t* plldata, U8 is_tx, U8 is_main){
     U8	i = 0;			// pll array index
     U8	band_idr;		// temps
-    U32	ux_noptt;
-    U32	ux_ptt;
-    U32	pll;
-    U32	ii;
-    U32	jj;
-    U32	tt;
-    U32	*	pllptr = plldata;
+    uint64_t	ux_noptt;
+    uint64_t	ux_ptt;
+    uint64_t	pll;
+    uint64_t	ii;
+    uint64_t	jj;
+    uint64_t	tt;
+    uint64_t*	pllptr = plldata;
 static U8	old_tx;
 /*
 #define SOUT_MAIN	0x04000000L
@@ -1690,9 +1729,41 @@ S32 set_mhz_step(S32 sval){
 
 ///////////////////////////////////////////////////////////////////////////////
 //-----------------------------------------------------------------------------
+// put_updn() stores signal to mic up/dn logic
+//-----------------------------------------------------------------------------
+void put_updn2(char kcode){
+
+	ud_buf[ud_head] = kcode;
+	if(++ud_head >= UD_MAX) ud_head = 0;
+	if(ud_head == ud_tail){
+		ud_tail += 1;
+		if(++ud_tail >= UD_MAX) ud_tail = 0;
+	}
+   return;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//-----------------------------------------------------------------------------
+// get_updn() retrieves signal for mic up/dn logic
+//-----------------------------------------------------------------------------
+char get_updn2(void){
+	char	kcode;
+
+	if(ud_tail != ud_head){
+		kcode = ud_buf[ud_tail];
+		if(++ud_tail >= UD_MAX) ud_tail = 0;
+	}else{
+		kcode = '\0';
+	}
+   return kcode;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//-----------------------------------------------------------------------------
 // is_mic_updn() returns 0 if no button, -1 if dn, +1 if up
 //-----------------------------------------------------------------------------
 S8 is_mic_updn(U8 ipl, U8 focus, U8 xmq){
+	char		c;			// mud2 signal holding reg
 	static	S8	i;			// return value
 	static	U8	click_mem;	// button pressed memory
 			S8	rtn = 0;
@@ -1702,49 +1773,102 @@ S8 is_mic_updn(U8 ipl, U8 focus, U8 xmq){
 		click_mem = 0;
 		return 0;
 	}
-/*	if(sin_flags & SIN_MCK_F){								// if edge flag...
-		if(sin_addr2 & SIN_MCK){							// u/d "clock" active
-			micdb_time(1);									// set debounce timer
-			i = 0;											// clear statics
-			click_mem = 0;
+	c = get_updn2();
+	if(c){
+		// process signal for mic u/d 2 (local mic for EX-766)
+		switch(c & ~(KHOLD_FLAG|KREL_FLAG)){
+		case MUP2chr:
+			rtn = 1;											// if up button pressed, set +
+			break;
+
+		case MDN2chr:
+			rtn = -1;											// if up button pressed, set -
+			break;
+
+		default:
+			c = KREL_FLAG;										// error trap, vectors to do-nothing exit
+			break;
 		}
-		read_sin_flags(SIN_MCK_F);
-	}else{
-		if(!click_mem){
-			if((!micdb_time(0)) && (sin_addr2 & SIN_MCK)){
-				mic_time(2);								// set long gap time for first press
-		    	if((sin_addr2 & (SIN_MUP | SIN_MCK)) == (SIN_MUP | SIN_MCK)){
-		    		i = 1;									// if up button pressed, set +
-		    	}
-		    	if((sin_addr2 & (SIN_MUP | SIN_MCK)) == (SIN_MCK)){
-		    		i = -1;									// if dn button pressed, set -
-		    	}
-	    		do_dial_beep();								// beep
-	    		click_mem = 1;
-				rtn = i;
-			}
-		}else{
-			if((!mic_time(0)) && (sin_addr2 & SIN_MCK)){
-				mic_time(1);								// set short gap time for hold press
-				// if mem mode & no scan, start scan
-				if(focus == MAIN){
-					if(!(xmq & MSCANM_XFLAG)){					// process main
-						if(!doscan(focus, 1)){
-				    		do_dial_beep();					// beep
-							rtn = i;
-						}
+		switch(c & (KHOLD_FLAG|KREL_FLAG)){
+		case KHOLD_FLAG:
+			do_dial_beep();										// beep
+			if(focus == MAIN){
+				if(!(xmq & MSCANM_XFLAG)){						// process main
+					if(doscan(focus, 1)){
+						rtn = 0;
 					}
-				}else{
-					if(!(xmq & MSCANS_XFLAG)){					// process sub
-						if(!doscan(focus, 1)){
-				    		do_dial_beep();					// beep
-							rtn = i;
+				}
+			}else{
+				if(!(xmq & MSCANS_XFLAG)){						// process sub
+					if(doscan(focus, 1)){
+						rtn = 0;
+					}
+				}
+			}
+			break;
+
+		default:
+		case KREL_FLAG:
+			rtn = 0;											// released, no return
+			break;
+
+		case 0:
+			do_dial_beep();										// beep
+			break;
+		}
+	}else{
+		// process signal for base mic u/d
+		if(sin_flags & SIN_MUD_CFM){							// if edge flag...
+			if(sin_addr2 & SIN_MUP_CF){							// u/d "clock" active
+				micdb_time(1);									// set debounce timer
+				i = 0;											// clear statics
+				click_mem = 0;
+			}
+			read_sin_flags(SIN_MUD_CFM);
+		}else{
+			if(!click_mem){
+				if((!micdb_time(0)) && (sin_addr2 & SIN_MUD_M)){
+					mic_time(2);								// set long gap time for first press
+					switch(sin_addr2 & (SIN_MUD_M)){
+					case SIN_MUP:
+			    		i = 1;									// if up button pressed, set +
+						break;
+
+					case SIN_MDN:
+			    		i = -1;									// if dn button pressed, set -
+						break;
+
+					default:
+			    		i = 0;									// if no button pressed, set 0
+						break;
+					}
+					do_dial_beep();								// beep
+		    		click_mem = 1;
+					rtn = i;
+				}
+			}else{
+				if((!mic_time(0)) && (sin_addr2 & SIN_MUD_M)){
+					mic_time(1);								// set short gap time for hold press
+					// if mem mode & no scan, start scan
+					if(focus == MAIN){
+						if(!(xmq & MSCANM_XFLAG)){					// process main
+							if(!doscan(focus, 1)){
+					    		do_dial_beep();					// beep
+								rtn = i;
+							}
+						}
+					}else{
+						if(!(xmq & MSCANS_XFLAG)){					// process sub
+							if(!doscan(focus, 1)){
+					    		do_dial_beep();					// beep
+								rtn = i;
+							}
 						}
 					}
 				}
 			}
 		}
-	}*/
+	}
 	return rtn;
 
 
@@ -1775,7 +1899,7 @@ S8 is_mic_updn(U8 ipl, U8 focus, U8 xmq){
 	    		micdb_time(1);								// set debounce timer
 	    		do_dial_beep();								// beep
 	    	}
-	    	read_sin_flags(SIN_MCK_F);
+	    	read_sin_flags(SIN_MCK_CF);
 	    }
 	}else{
     	if((sin_addr2 & (SIN_MUP | SIN_MCK)) == (SIN_MCK)){
@@ -1992,10 +2116,10 @@ U8 get_lohi(U8 main, U8 setread){
 // set_next_band() returns bandid for next band on list
 //	return 0xff if no band (eg, less than 3 modules present)
 //-----------------------------------------------------------------------------
-U8 set_next_band(U8 focus){
-	U8	i;	// temps
-	U8	j;
-	U8	k;
+U16 set_next_band(U8 focus){
+	U16	i;	// temps
+	U16	j;
+	U16 	k;
 	U8	h;
 
 	if((bandid_m == BAND_ERROR) || (bandid_s == BAND_ERROR)){
@@ -2038,8 +2162,8 @@ U8 set_next_band(U8 focus){
 //-----------------------------------------------------------------------------
 // set_swap_band() swaps main/sub
 //-----------------------------------------------------------------------------
-U8 set_swap_band(void){
-	U8	i;	// temp
+U16 set_swap_band(void){
+	U16	i;	// temp
 
 	if((bandid_m == BAND_ERROR) || (bandid_s == BAND_ERROR)){
 		i = BAND_ERROR;										// if either bandid is error, abort (less than 2 modules present)
@@ -2058,7 +2182,7 @@ U8 set_swap_band(void){
 //	bit 0x80 will return 7, bit 0x01 returns 0
 //	no bit set returns 0xff
 //-----------------------------------------------------------------------------
-U8 get_bit(U8 value){
+U8 get_bit(U16 value){
 	U8	i;	// temps
 	U8	j;
 
@@ -2077,11 +2201,11 @@ U8 get_bit(U8 value){
 // set_bit() takes count of a set bit in value
 //	and creates a bit-map return
 //-----------------------------------------------------------------------------
-U8 set_bit(U8 value){
+U8 set_bit(U16 value){
 	U8	i;	// temps
-	U8	j;
+	U16	j;
 
-	if(value > 7) value = 7;
+	if(value > 14) value = 14;
 	for(i=0, j=0x01; i<value; i++){
 		j<<=1;										// shift bitmap
 	}
@@ -2093,9 +2217,9 @@ U8 set_bit(U8 value){
 // bit_set() takes bitmap of a (single) set bit in value
 //	and creates a count return
 //-----------------------------------------------------------------------------
-U8 bit_set(U8 value){
+U8 bit_set(U16 value){
 	U8	i = 0;	// temps
-	U8	j;
+	U16	j;
 
 	if(!value) return 0xff;							// no bits set, error
 	j = 0x01;										// scan value for the first "1"

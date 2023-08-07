@@ -57,6 +57,8 @@ static void TIMER2BHandler(void);
 //static void GPIO_PL_Handler(void);
 //static void GPIO_PM_Handler(void);
 //static void GPIO_PP_Handler(void);
+static void GPIO_PF_Handler(void);
+static void GPIO_PG_Handler(void);
 static void GPIO_PQ_Handler(void);
 static void SSI2Handler(void);
 //static void SSI3Handler(void);
@@ -141,8 +143,8 @@ void (* const g_pfnVectors[])(void) =
     IntDefaultHandler,                      // 27	Analog Comparator 2
     IntDefaultHandler,                      // 28{	System Control (PLL, OSC, BO)
     IntDefaultHandler,                      // 29	FLASH Control
-    IntDefaultHandler,                      // 30	GPIO Port F
-    IntDefaultHandler,                      // 31	GPIO Port G
+	GPIO_PF_Handler,                      	// 30	GPIO Port F
+	GPIO_PG_Handler,                      	// 31	GPIO Port G
 											// NVIC_EN1
     IntDefaultHandler,                      // 00{	GPIO Port H
     UART2Handler,		                    // 01	UART2 Rx and Tx
@@ -430,6 +432,28 @@ TIMER4BHandler(void)
 {
 	Timer4B_ISR();					// process timer4 interrupt
 }*/
+
+//*****************************************************************************
+//
+// This is the code that gets called when the processor receives a gpioq intr.
+//
+//*****************************************************************************
+static void
+GPIO_PF_Handler(void)
+{
+	gpiof_isr();					// process gpioq interrupt
+}
+
+//*****************************************************************************
+//
+// This is the code that gets called when the processor receives a gpioq intr.
+//
+//*****************************************************************************
+static void
+GPIO_PG_Handler(void)
+{
+	gpiog_isr();					// process gpioq interrupt
+}
 
 //*****************************************************************************
 //

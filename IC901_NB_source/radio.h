@@ -124,19 +124,29 @@ struct vfo_struct {
 #define	PTT_EDGE		0x80
 
 // SIN activity flag bits
-#define SIN_SQSM_F		((SIN_SQSA) >> 16)			// COS main
-#define SIN_SQSS_F		((SIN_SQSB) >> 16)			// COS sub
-#define SIN_MSRF_F		(SIN_SRFA >> 16)			// SRF main
-#define SIN_SSRF_F		(SIN_SRFB >> 16)			// SRF sub
+#define SIN_SQSM_F		SIN_SQSA					// COS main
+#define SIN_SQSM_CF		SIN_SQSA_CF					// COS main
+#define SIN_SQSS_F		SIN_SQSB					// COS sub
+#define SIN_SQSS_CF		SIN_SQSB_CF					// COS sub
+//#define SIN_MSRF_F		SIN_SRFA					// SRF main
+#define SIN_MSRF_CF		SIN_SRFA_CF					// SRF main
+//#define SIN_SSRF_F		SIN_SRFB					// SRF sub
+#define SIN_SSRF_CF		SIN_SRFB_CF					// SRF sub
 #define SIN_SEND_F		SIN_SEND					// PTT
+//#define SIN_SEND_CF		SIN_SEND_CF					// PTT
 #define SIN_DSQ_F		(SIN_DSQA|SIN_DSQB)			// tone detected
-#define SIN_DSQA_F		(SIN_DSQA)					// tone detected
-#define SIN_DSQB_F		(SIN_DSQB)					// tone detected
-#define SIN_MCK_F		(SIN_MUP|SIN_MDN)					// MIC u/d button change
-#define SIN_SEL_F		(SIN_TONE|SIN_OPT1|SIN_OPT2|SIN_OPT3)	// OPT
-#define	SIN_VFOM_F		0x00010000L					// vfo change flag
-#define	SIN_VFOS_F		0x00020000L					// vfo change flag
-#define SIN_SINACTO_F	0x00040000L					// SIN timeout has occurred
+#define SIN_DSQ_CF		(SIN_DSQA_CF|SIN_DSQB_CF)	// tone detected
+#define SIN_DSQA_F		SIN_DSQA					// tone detected
+//#define SIN_DSQA_CF		SIN_DSQA_CF					// tone detected
+#define SIN_DSQB_F		SIN_DSQB					// tone detected
+//#define SIN_DSQB_CF		SIN_DSQB_CF					// tone detected
+#define SIN_MUD_M		(SIN_MUP|SIN_MDN)			// MIC u/d button change mask
+#define SIN_MUD_CFM		(SIN_MUP_CF|SIN_MDN_CF)		// MIC u/d button change mask
+#define SIN_SEL_M		(SIN_TONE|SIN_OPT1|SIN_OPT2|SIN_OPT3)	// OPT mask
+#define SIN_SEL_CFM		(SIN_TONE_CF|SIN_OPT1_CF|SIN_OPT2_CF|SIN_OPT3_CF)	// OPT mask
+#define	SIN_VFOM_CF		0x00100000L					// vfo change flag
+#define	SIN_VFOS_CF		0x00200000L					// vfo change flag
+#define SIN_SINACTO_F	0x40000000L					// SIN timeout has occurred
 
 // SOUT signal flag bits
 #define SOUT_TONE_F		0x01	// tone update
@@ -199,7 +209,7 @@ void push_vfo(void);
 U32 fetch_sin(U8 addr);
 U32 read_sin_flags(U32 flag);
 void vfo_change(U8 band);
-U32* setpll(U8 bid, U32 *plldata, U8 is_tx, U8 is_main);
+uint64_t* setpll(U8 bid, uint64_t* plldata, U8 is_tx, U8 is_main);
 U8  get_present(void);
 //U32 set_squ(U8 mainsub);
 //U32 set_vol(U8 mainsub);
@@ -212,12 +222,13 @@ U8 inc_dplx(U8 main);
 U8 read_dplx(U8 main);
 S8 add_vfo(U8 main, S8 adder, U8 daddr);
 U8 get_band_index(U8 main);
-U8 set_next_band(U8 focus);
-U8 set_swap_band(void);
+U16 set_next_band(U8 focus);
+U16 set_swap_band(void);
 U8 read_tsab(U8 main, U8 absel);
 void set_tsab(U8 main, U8 absel, U8 value);
 void set_ab(U8 main, U8 tf);
 S32 set_mhz_step(S32 sval);
+void put_updn2(char kcode);
 S8 is_mic_updn(U8 ipl, U8 focus, U8 xmq);
 U32 get_freq(U8 focust);
 void copy_vfot(U8 main);
@@ -227,9 +238,9 @@ void  force_push_radio(void);
 U8 get_lohi(U8 bid, U8 setread);
 U8 get_memnum(U8 main, U8 adder);
 U8 get_callnum(U8 main, U8 adder);
-U8 get_bit(U8 value);
-U8 set_bit(U8 value);
-U8 bit_set(U8 value);
+U8 get_bit(U16 value);
+U8 set_bit(U16 value);
+U8 bit_set(U16 value);
 void  update_radio_all(U8 vector);
 void set_offs(U8 focus, U16 value);
 U16 get_offs(U8 focus);

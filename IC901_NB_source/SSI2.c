@@ -172,8 +172,8 @@ void lcd_send(uint8_t targ){
 	if(cb >= CB_MAX){
 		cb = 0;
 	}
-	set_wait(25);
-	while((cb == cbt) && is_wait());							// this means the buffer is full of stuff to send... wait for buffer to clear
+//	set_wait(25);
+//	while((cb == cbt) && is_wait());							// this means the buffer is full of stuff to send... wait for buffer to clear
 	if(targ){
 		for(i=0; i<4; i++){
 			lcdcbbuf[cbh][i].bigt = lcdsegs[i].bigt;
@@ -219,7 +219,8 @@ void lcd_send(uint8_t targ){
 void SSI2_ISR(void){
 	U8	i;
 
-	GPIO_PORTD_AHB_DATA_R &= ~(LCD_CE2 | LCD_CE1);			// CE = low
+	// CE = low
+	GPIO_PORTD_AHB_DATA_R &= ~(LCD_CE2 | LCD_CE1);
 	for(i=0;i<10;i++);
 	SSI2_ICR_R = SSI_ICR_EOTIC;
 	if(cbh != cbt){											// still data to send

@@ -145,9 +145,10 @@ U16 proc_init(U32 sys_clk)
 #endif
 
 #if PORTF != 0
-    GPIO_PORTF_AHB_DIR_R = 0x1f;
-    GPIO_PORTF_AHB_DEN_R = 0x1f;
-    GPIO_PORTF_AHB_DATA_R = 0x00;
+    GPIO_PORTF_AHB_DIR_R = PORTF_DIR;
+    GPIO_PORTF_AHB_DEN_R = PORTF_DEN;
+    GPIO_PORTF_AHB_PUR_R = PORTF_PUR;
+    GPIO_PORTF_AHB_DATA_R = PORTF_INIT;
 #endif
 
 #if PORTE != 0
@@ -195,16 +196,41 @@ U16 proc_init(U32 sys_clk)
 	COMP_ACCTL1_R = 0;
 //	COMP_ACSTAT0_R & COMP_ACSTAT_OVAL				// bit isolation mask for COMP output status
 
-	// init timer0A for interrupts
-	timer0A_init(sys_clk);							// init main.c ms app timer isr
-	timer0B_init(sys_clk);							// beep output/ISR
-//	timer1A_init(sys_clk);							// init serial pacing isr
-//	timer1B_init(sys_clk);							// KPU long baseline timer intr
+	// encoder dial GPIO edge ISR config
+	// unlock PORTF
+//	GPIO_PORTF_LOCK_R = 0x4C4F434B;
+//	GPIO_PORTF_CR_R = 0xff;
+	GPIO_PORTF_AHB_IM_R = 0x00;							// config PF4 edge interrupt
+	GPIO_PORTF_AHB_IEV_R &= ~ENC_DN;					// falling edge
+	GPIO_PORTF_AHB_IBE_R &= ~ENC_DN;					// one edge
+	GPIO_PORTF_AHB_IS_R &= ~ENC_DN;						// edge ints
+	GPIO_PORTF_AHB_ICR_R = 0xff;						// clear int flags
+	GPIO_PORTF_AHB_IM_R |= (ENC_DN);					// enable ENCdn edge intr
 
-	ssi0_init();									// init SSI modules
-	init_sio(sys_clk, INIT_SIN);					// init DATA1 & DATA2 SSI modules (SSI1 & SSI3)
-	ssi2_init();									// LCD ssi init
-	timer2B_init(sys_clk);							// LCD blink timer
+	GPIO_PORTG_AHB_IM_R = 0x00;							// config PG0 edge interrupt
+	GPIO_PORTG_AHB_IEV_R &= ~ENC_UP;					// falling edge
+	GPIO_PORTG_AHB_IBE_R &= ~ENC_UP;					// one edge
+	GPIO_PORTG_AHB_IS_R &= ~ENC_UP;						// edge ints
+	GPIO_PORTG_AHB_ICR_R = 0xff;						// clear int flags
+	GPIO_PORTG_AHB_IM_R |= (ENC_UP);					// enable ENCup edge intr
+
+	NVIC_EN0_R = NVIC_EN0_GPIO_PORTF;					// enable ISRs
+	NVIC_EN0_R = NVIC_EN0_GPIO_PORTG;
+
+	// init timer0A for interrupts
+	timer0A_init(sys_clk);								// init main.c ms app timer isr
+	timer0B_init(sys_clk);								// beep output/ISR
+//	timer1A_init(sys_clk);								// init serial pacing isr
+//	timer1B_init(sys_clk);								// KPU long baseline timer intr
+	// enable timer2 clock domain
+	SYSCTL_RCGCTIMER_R |= SYSCTL_RCGCTIMER_R2;
+	ui32Loop = SYSCTL_RCGCGPIO_R;
+	NVIC_EN0_R = NVIC_EN0_TIMER2A;						// enable timer2A intr
+
+	ssi0_init();										// init SSI modules
+	init_sio(sys_clk, INIT_SIN);						// init DATA1 & DATA2 SSI modules (SSI1 & SSI3)
+	ssi2_init();										// LCD ssi init
+	timer2B_init(sys_clk);								// LCD blink timer
 
 	// init LED PWMs (M0) on PF0 - PF3
 	SYSCTL_RCGCPWM_R |= SYSCTL_RCGCPWM_R0;
@@ -233,7 +259,7 @@ U16 proc_init(U32 sys_clk)
 	ipl |= IPL_PWM0INIT;
 
 
-	initserial();									// init UARTs
+	initserial();										// init UARTs
 
 //    init_uart2(115200);
 //    init_uart3(115200);
@@ -378,22 +404,27 @@ void timer1B_init(U32 sys_clk){
 }
 
 //*****************************************************************************
-//	DATA2 1/2bit timer
+//	DATA2 1/2bit or EOT_WAIT timer
+//	bit_start is "1" for start bit or "0" for EOT_WAIT
 //*****************************************************************************
-void timer2A_init(U32 sys_clk){
+void timer2A_init(U32 sys_clk, U8 bit_start){
 	volatile U32	ui32Loop;
 
+	// timer2 clock domain enabled in proc_init()
 	// init Timer2A (Count dn, periodic -- inputs IC-900 async data)
-	SYSCTL_RCGCTIMER_R |= SYSCTL_RCGCTIMER_R2;
-	ui32Loop = SYSCTL_RCGCGPIO_R;
-	TIMER2_CTL_R &= ~(TIMER_CTL_TAEN);									// disable timer
-	TIMER2_CFG_R = TIMER_CFG_16_BIT; //0x4; //0;
+	TIMER2_CTL_R &= ~(TIMER_CTL_TAEN);					// disable timer
+	TIMER2_CFG_R = 0;
 	TIMER2_TAMR_R = TIMER_TAMR_TAMR_PERIOD;
+	TIMER2_CFG_R = TIMER_CFG_16_BIT;
 	TIMER2_TAPR_R = TIMER2A_PS;
-	TIMER2_TAILR_R = (uint16_t)(SIN_START_BIT_TIME);
-	TIMER2_IMR_R = TIMER_IMR_TATOIM;									// enable timer intr
-//	TIMER2_CTL_R |= (TIMER_CTL_TAEN);									// enable timer
-	TIMER2_ICR_R = TIMER2_MIS_R;										// clear any flagged ints
+	if(bit_start){
+		TIMER2_TAILR_R = (uint16_t)(SIN_START_BIT_TIME);
+	}else{
+		TIMER2_TAILR_R = (uint16_t)(SIN_EOT_TIME);
+	}
+	TIMER2_IMR_R = TIMER_IMR_TATOIM;					// enable timer intr
+	TIMER2_CTL_R |= (TIMER_CTL_TAEN);					// enable timer
+	TIMER2_ICR_R = TIMER2_MIS_R;						// clear any flagged ints
 }
 
 //*****************************************************************************
@@ -403,17 +434,17 @@ void timer2B_init(U32 sys_clk){
 	volatile U32	ui32Loop;
 
 	// init timer0B for interrupts
-	SYSCTL_RCGCTIMER_R |= SYSCTL_RCGCTIMER_R2;		// enable timer 2 clock domain
+	SYSCTL_RCGCTIMER_R |= SYSCTL_RCGCTIMER_R2;			// enable timer 2 clock domain
 	ui32Loop = SYSCTL_RCGCGPIO_R;
-	TIMER2_CTL_R &= ~(TIMER_CTL_TBEN);				// disable timer
+	TIMER2_CTL_R &= ~(TIMER_CTL_TBEN);					// disable timer
 	TIMER2_CFG_R = TIMER_CFG_16_BIT; //0x4; //0;
 	TIMER2_TBMR_R &= ~(TIMER_TBMR_TBMR_M);
 	TIMER2_TBMR_R |= TIMER_TBMR_TBMR_PERIOD;
-	TIMER2_TBPR_R = TIMER2B_PS;						// timer 1B prescale
+	TIMER2_TBPR_R = TIMER2B_PS;							// timer 1B prescale
 	TIMER2_TBILR_R = (uint16_t)(sys_clk/(TIMER2B_FREQ * (TIMER2B_PS + 1)));
-//	TIMER2_IMR_R |= TIMER_IMR_TBTOIM;				// enable timer intr
-	TIMER2_CTL_R |= TIMER_CTL_TBEN;					// enable timer
-	NVIC_EN0_R = NVIC_EN0_TIMER2B;					// enable timer2B intr in the NVIC_EN regs
+//	TIMER2_IMR_R |= TIMER_IMR_TBTOIM;					// enable timer intr
+	TIMER2_CTL_R |= TIMER_CTL_TBEN;						// enable timer
+	NVIC_EN0_R = NVIC_EN0_TIMER2B;						// enable timer2B intr in the NVIC_EN regs
 }
 
 //*****************************************************************************

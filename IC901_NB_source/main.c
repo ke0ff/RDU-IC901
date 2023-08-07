@@ -15,7 +15,8 @@
  *    Copied from IC900_RDU application.  See that project's revnotes prior to 10-19-21 for historical rev status.
  *
  *    Project scope rev History:
- *    07-30-23 jmh:	 Modification work to convert 123 code to 1294 platform and also modify for the change from IC900 to IC901.
+ *    08-05-23 jmh:  ASD reception now working reliably (one must fully reset the timer resource at timer events to change the timing value to the next event).
+ *    07-30-23 jmh:	 In progress: Modification work to convert 123 code to 1294 platform and also modify for the change from IC900 to IC901.
  *    03-23-22		 * 1st-compile complete with CLI functioning.
  *    				 * NVRAM port complete and working.  Re-tested after replacing Tiva processor due to damage during probing.
  *    				 * PWM port complete - tested, PWMs working.
@@ -26,7 +27,7 @@
  *    				 	LCD (SSI2) coding complete.  Base-band code tested.  Some higher-level functions tested, but not all
  *    				 * Comparator init tested, words.  Must remember to remove 1K resistor (R42) and 0.001uF cap (C16) from IC901 board on future builds.
  *    				 * SIN (SSI3) and SOUT (SSI1) base-band code complete.  SIN seems to be working when tapping DATA2 from an working radio.
- *    				 	SOUT is able to send 40b messages.  Need to test with real radio.  Need to adjust code to accommodate 64b data type.
+ *    				 	SOUT is able to send 40b messages.  Need to test with real radio.  Need to adjust code to accommodate 64b data type for SOUT.
  *    				 - need to code encoder up/dn driver
  *    				 - need to code PTT input on CLK_EX766
  *    				 - need to look at porting HM-133 master code into this framework
@@ -52,30 +53,30 @@
  *	Modifying only the Tiva top-hat is preferable, but this results in moderately high-Z level shifting networks (on the order of 100K for the pull-downs).
  *	Placing 5.8K (approx) resistors in parallel with the 47K pullups on each of the IC-901 signals allows the pull-downs on the top-hat to be sized at 10K.
  *	This increases the max pullup current for the IC-901 resistors by a factor of 10 (resulting in 1mA for each signal when the input is grounded).  However,
- *	this current only flows when a button or input is activated.  It is also a rarity that two or more inputs will activate at the same time and they also only
- *	for a short time, so the aggregate impact of this should be minimal.  Swapping the 7805 linear regulator for a switching type greatly reduces the Pd of the
- *	system which more than offsets the increase due to the pullups.
+ *	this current only flows when a button or input is activated.  It is also a rarity that two or more inputs will activate at the same time -- they also only
+ *	activate for a short time, so the aggregate impact of this should be minimal.  Swapping the 7805 linear regulator for a switching type greatly reduces the
+ *	Pd of the system which more than offsets the current draw increase due to the pullups.
  *
- *	With the 7805 in place, the total Pd for the MCU section is 1.2W (this doesn't include the back-light LEDs) with 700mW dissipating in the 7805 itself.
- *	With an 85% efficient switching regulator, the total Pd is about 588mW, with 88mW of that dissipating in the switcher.  Better than 50% improvement.
- *	Replacing the dimmer transistor with a FET also reduces the system Pd.  These improvements don't impact SW, but they are noted here for reference.
+ *	With the 7805 in place, the total Pd for the MCU section is about 1.2W (this doesn't include the back-light LEDs) with 700mW of this dissipating in the
+ *	7805 itself.  With an 85% efficient switching regulator, the total Pd is about 588mW, with 88mW of that dissipating in the switcher.  Better than 50%
+ *	improvement.  These improvements don't impact SW, but they are noted here for reference.
  *
- *	Also noted here is the fact that the NVRAM used is now NRFND (7/30/23).  Gunna need to stock up to cover the top-hat PCBs I have.  Stupid end of life.
+ *	Also noted here is the fact that the NVRAM used here is now NRFND (as of 7/30/23).  Gunna need to stock up to cover the top-hat PCBs I have.  Stupid end of life.
  *
  *******************************************************************/
 
 //-----------------------------------------------------------------------------
 // main.c
-//  Accomplishes IC-901 Remote Controller function (replacing IC1 in the remote controller). Interfaces to original
-//		control IC footprint.  Minimal changes are foreseen to the basic control circuits.  The only notable modification
-//		is to convert the DIMMER circuit to a PWM capable switch (existing circuit is a two level linear circuit).
-//		Changes so far:
-//			* Remove components required to fit interposer PCB to IC-901 PCB
+//  Accomplishes the IC-901 Remote Controller function (replacing IC1 in the remote controller). Interfaces to original
+//		control IC footprint using a small PCB for the Tiva (the TopHat) and an interposer PCB to adapt the TopHat to the IC-901 IC1 footprint.
+//		Minimal changes are foreseen to the basic IC-901 control circuits.
+//		The changes so far:
+//			* Remove components required to fit interposer PCB to IC-901 PCB.  Basically, this includes IC1 and BT1 and the chip-parts between them
 //			* Replace IC6 with 5V switcher IC (located at the vacant BT1 footprint), jumper D1
 //			* Remove Q10 and jumper B to C (inverts DATA1)
-//			* change 47K pullups to 4.7K (5.4K//47K = 4.84K)
+//			* change 47K pullups to 4.7K (5.4K//47K = 4.84K).  R2, R3, R31-41, and R53
 //			* Remove R42.  Replace C16 with 100pF cap (0805)
-//			* PWM backlight: Q6 = NFET, R6 = 1K
+//			* PWM backlight: Q6 = NFET, R6 = 1K.  Q6 on the IC-901 has an "odd" footprint, so follow schematic notes for NFET placement
 //
 //  UART0 is used for debug I/O.
 //  	Debug CLI is a simple maintenance/debug port (via UART1 @PA[1:0]) with the following core commands:
@@ -229,7 +230,7 @@ U16		ipl;							// initial power on state
 char	btbuf[100];						// temp buffer
 
 #define KBD_ERR 0x01
-#define KBD_BUFF_END 5
+#define KBD_BUFF_END 8
 U16		S4_stat;						// holds de-mux'd status of spare_S4 switch
 U32		kbd_buff[KBD_BUFF_END];			// keypad data buffer
 U8		kbd_hptr;						// keypad buf head ptr
@@ -699,10 +700,10 @@ char process_IO(U8 flag){
 		process_UI(flag);
 //		process_CCMD(flag);
 	}
-//	process_SIN(0);
+	process_SIN(0);
 //	process_SOUT(0);
 //	process_SIN(0);
-//	process_UI(0);
+	process_UI(0);
 //	process_CCMD(0);									// process CCMD inputs
 
 /*    lcd_send(lcd_tests1, 0);
@@ -1099,9 +1100,11 @@ U8 got_key(void){
 
 //-----------------------------------------------------------------------------
 // get_key() returns keypad ASCII key or 0x00 if none
+//	redirects local mic u/d signals if detected
 //-----------------------------------------------------------------------------
 char get_key(void){
 	char	rtn = '\0';	// return value
+	char	c;
 	U32		j;
 
 	if(kbd_hptr != kbd_tptr){
@@ -1110,6 +1113,18 @@ char get_key(void){
 			kbd_tptr = 0;
 		}
 		rtn = kp_asc(j);								// get ASCII
+
+		if(rtn & KREL_FLAG){
+			GPIO_PORTB_DATA_R &= (~2);	//!!!
+		}else{
+			GPIO_PORTB_DATA_R |= (2);	//!!!
+		}
+
+		c = rtn & ~(KREL_FLAG | KHOLD_FLAG);			// see if is micu/d chr
+		if((c == MUP2chr) || (c == MDN2chr)){			// send signal to mic up/dn logic in radio.c
+			put_updn2(rtn);
+			rtn = '\0';									// strip the chr from the main signal stream
+		}
 	}
 	return rtn;
 }
@@ -1538,7 +1553,7 @@ void gpiog_isr(void){
 		GPIO_PORTG_AHB_IM_R &= ~ENC_UP;						// disable edge intr
 		// set debounce timer
 		dialtimer = DIAL_DEBOUNCE;							// set debounce
-		// NOTE: debounce timer disables itself, clears gpioc flags, and enables gpioc
+		// NOTE: debounce timer disables itself, clears gpio flags, and re-enables gpio
 	}
 	return;
 }
@@ -1546,18 +1561,18 @@ void gpiog_isr(void){
 void gpiof_isr(void){
 	U8	maindial_in;
 
-	maindial_in = GPIO_PORTF_AHB_MIS_R & ENC_DN;				// grab dial interrupt flag
+	maindial_in = GPIO_PORTF_AHB_MIS_R & ENC_DN;			// grab dial interrupt flag
 	GPIO_PORTF_AHB_ICR_R = ENC_DN;							// clear int flags
 	if(maindial_in){
 		if(maindial_in & ENC_DN){
-			main_dial += 1;									// do up
+			main_dial -= 1;									// do up
 			d_beep;											// dial beep
 		}
 		// disable gpioc
 		GPIO_PORTF_AHB_IM_R &= ~ENC_DN;						// disable edge intr
 		// set debounce timer
 		dialtimer = DIAL_DEBOUNCE;							// set debounce
-		// NOTE: debounce timer disables itself, clears gpioc flags, and enables gpioc
+		// NOTE: debounce timer disables itself, clears gpio flags, and re-enables gpio
 	}
 	return;
 }
@@ -1635,7 +1650,7 @@ static	U16	key_last;				// last key
 		iplt2 = 0;
 		free_32 = 0;
 		waittimer = 0;				// gp wait timer
-		dialtimer = 0;				// dial debounce wait timer
+		dialtimer = 1;				// dial debounce wait timer
 		sintimer = 0;				// sin activity timer
 		souttimer = 0;				// sout pacing timer
 		mhztimer = 0;				// mhz digit access timer
@@ -1834,10 +1849,10 @@ static	U16	key_last;				// last key
 		}
 		if (dialtimer != 0){								// update wait timer
 			if(!(--dialtimer)){
-				GPIO_PORTF_ICR_R = ENC_DN;					// clear int flags
-				GPIO_PORTF_IM_R |= ENC_DN;					// enable edge intr
-				GPIO_PORTG_ICR_R = ENC_UP;					// clear int flags
-				GPIO_PORTG_IM_R |= ENC_UP;					// enable edge intr
+				GPIO_PORTF_AHB_ICR_R = ENC_DN;					// clear int flags
+				GPIO_PORTF_AHB_IM_R |= ENC_DN;					// enable edge intr
+				GPIO_PORTG_AHB_ICR_R = ENC_UP;					// clear int flags
+				GPIO_PORTG_AHB_IM_R |= ENC_UP;					// enable edge intr
 			}
 		}
 	}

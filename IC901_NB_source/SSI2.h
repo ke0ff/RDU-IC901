@@ -20,7 +20,7 @@
  *******************************************************************/
 #define	LCD_MSG_LEN	7					// # bytes in LCD half-message
 #define	LCD_MSG_MAX	(LCD_MSG_LEN * 4)	// # bytes in LCD burst
-#define	CB_MAX	10						// circ buff max entries
+#define	CB_MAX	20						// circ buff max entries
 #define	MS_MAX	4						// msg max words
 #define	MSB_MAX	8						// msg max bytes
 #define	NOBLINK	1						// LCD no-blink signal

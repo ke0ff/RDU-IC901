@@ -1,5 +1,5 @@
 /********************************************************************
- ************ COPYRIGHT (c) 2021 by ke0ff, Taylor, TX   *************
+ ************ COPYRIGHT (c) 2023 by ke0ff, Taylor, TX   *************
  *
  *  File name: sio.c
  *
@@ -13,6 +13,7 @@
 
 /********************************************************************
  *  File scope declarations revision history:
+ *    08-06-23 jmh:  Reformed for IC-901 data formats and initial validation/debug complete
  *    06-29-21 jmh:  creation date
  *
  *******************************************************************/
@@ -20,45 +21,41 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <math.h>
-#include "inc/tm4c1294ncpdt.h"
-#include "inc/tm4c1294ncpdt_PCTL.h"
-#include "nvic.h"
+#include "inc/tm4c1294ncpdt.h"		// processor peripheral defines
+#include "inc/tm4c1294ncpdt_PCTL.h"	// GPIO alt-func defines
+#include "nvic.h"					// peripheral ISR enables
 #include "typedef.h"
-#include "init.h"						// App-specific SFR Definitions
+#include "init.h"					// App-specific SFR Definitions
 #include "sio.h"
-#include "tiva_init.h"
-#include "serial.h"
-#include "radio.h"
-#include "ssi1.h"
-#include "ssi3.h"
+#include "tiva_init.h"				// init function defines
+#include "serial.h"					// serial I/O functions
+#include "ssi1.h"					// SOUT
+#include "ssi3.h"					// SIN
 
 //-----------------------------------------------------------------------------
 // local declarations
 //-----------------------------------------------------------------------------
 
-U32	sin_perr;				// sin status registers
-U8	sin_error;
-U32	sin_mask;
-U8	sin_hptrm1;				// sin head/tail indecies
-U8	sin_hptr;
-U8	sin_tptr;
+U16	sin_perr;						// sin error status register
 #define	SIN_MAX	10
-U16	sin_buf[SIN_MAX];		// sin buffer array
-U16	sinstat_buf[SIN_MAX];	// sin SSI status buffer array
-U16	sin_dr;
-U8	tmr_pingpong;			// Timer2A mode register
+U16	sin_buf[SIN_MAX];				// sin buffer array
+U16	sinstat_buf[SIN_MAX];			// sin SSI status buffer array
+U8	sin_hptr;						// sin circ buffer indexes
+U8	sin_tptr;
+U8	tmr2a_mode;						// Timer2A mode register
 
 //-----------------------------------------------------------------------------
 // ***** START OF CODE *****
 //-----------------------------------------------------------------------------
 
 /****************
- * init_sio is called at IPL and initializes the data structures for the sio Fns
+ * init_sio is called at IPL (or whenever the SIN system needs to be flushed) and initializes the data structures for the sio Fns
  * SSI1 is the 40b sync/async data output master.  Clock is pinned out, but is only used for the base-unit direct connect (not used for the EX-766 connection)
- * SSI3 is the 16b async dat input master.  This serial transfer is initiated by a GPIO trigger on PQ3.  This triggers a timer delay (timer 2A) of one bit time
+ * SSI3 is the 16b async data input master.  This serial transfer is initiated by a GPIO trigger on PQ3.  This triggers a timer delay (timer 2A) of one bit time
  * 		at which point the Timer2A_ISR triggers an SPI transfer (a single word of 16b).  SSI3_ISR transfers the received data word to the buffer and then re-cycles
  * 		the GPIO trigger to arm for the next transfer.
  * 		Since the start bit is skipped, the received data word has only data bits.  !! This differs from the IC-900 implementation !!
+ * flush is a T/F that bypasses SOUT init if true
  */
 U32 init_sio(U32 sys_clk, U8 flush)
 {
@@ -67,30 +64,27 @@ U32 init_sio(U32 sys_clk, U8 flush)
 	volatile U32	ui32Loop;
 
 	// init local variables and buffers
-	sin_error = 0;
 	sin_perr = 0;
-	sin_mask = 0;
-	sin_hptrm1 = 0;
 	sin_hptr = 0;
 	sin_tptr = 0;
-	sin_buf[sin_hptr] = 0;
+//	sin_buf[sin_hptr] = 0;
 	for(i=0; i<SIN_MAX; i++){								// clear buffer entries
 		sin_buf[i] = 0;
 		sinstat_buf[i] = 0;
 	}
 
 	// init ssi1 (4800 baud, 8b, async serial out)
-	//	drives 40b message output (5, 8bit values written into the FIFO one after the other), the SO bitmap is as follows
+	//	drives 40b message output (5, 8bit values burst-written into the FIFO), the SO bitmap is as follows
 	//	BIT#		DESCRIPTION
 	//	39			start, always cleared to 0
 	//	[38:35]		sub-module addr
 	//	[34:24]		control data
 	//	[23:05]		data
-	//	[04:00]		stop, always set to 1 except for WBRX module
+	//	[04:00]		stop, always set to 1 except for WBRX module which features 80bit frames
 
-	// SOUT config is in SSI1.c
+	// call SOUT config in SSI1.c
 	if(!flush){
-		ssi1_init();										// init SSI1 output plus clock (master)
+		ssi1_init();										// init SOUT data output plus clock (master)
 	}
 	// SIN config
 	SYSCTL_RCGCSSI_R |= SYSCTL_RCGCSSI_R3;					// activate SSI3 clock domain
@@ -100,10 +94,8 @@ U32 init_sio(U32 sys_clk, U8 flush)
 	GPIO_PORTQ_IS_R &= ~DATA2;								// edge ints
 	GPIO_PORTQ_ICR_R = 0xff;								// clear int flags
 	GPIO_PORTQ_IM_R |= (DATA2);								// enable SIN edge intr
-	// init timer2A (1-bit timer for DATA2 start-bit)
-	timer2A_init(sys_clk);
-	// enable ISRs
-	NVIC_EN0_R = NVIC_EN0_TIMER2A;							// enable timer2A intr
+//	GPIO_PORTB_AHB_DATA_R |= SPARE_PB1;					// !!! debug GPIO
+	// enable GPIO ISR
 	NVIC_EN2_R = NVIC_EN2_GPIO_PORTQ;						// enable GPIOQ edge intr
 	iplr = IPL_ASIOINIT;
 	return iplr;
@@ -111,20 +103,23 @@ U32 init_sio(U32 sys_clk, U8 flush)
 
 //**********************************************************************************************//
 //																								//
-//	Serial Out via SSI1TX to create a 4800 baud, 32b data path (1 start bit, 1 stop bit)		//
-//	Requires an inverter to get it to work right since the TIVA SPI returns to zero between		//
-//	transfers.																					//
+//	Serial Out via SSI1TX to create a 4800 baud, 40b data path (1 start bit, at least 1 stop	//
+//	bit). Requires external signal inversion for data to get it to work right since the TIVA	//
+//	SPI returns to zero between transfers (data needs to idle high to make it look async).		//
+//	SSI1 is configured for 8b xfrs, which means that 5 bytes must be burst filled into the		//
+//	SSI FIFO to get a continuous 40b frame.  The frame must be continuous to allow the ASYNC	//
+//	case which arises when the EX-766 is used.													//
 //																								//
 //**********************************************************************************************//
 
-/****************
- * send_so sends 4800 baud SYNC/ASYNC data using SSI1 tx output.
- *  CLOCK is sent, but is not used for EX766 interface, only for direct connect interface.
- *  This is configured mechanically per the IC-901 operating manual.
- * 	data is 39 bits, justified against bit 39 (left)  -- bit 40 is start bit.
- * send_so() adds the start bit by masking off bit 40, and then stores
- * 	the transfer as 5, 8-bit values to the SPI data register/FIFO
- */
+//--------------------------------------------------------------------------------
+// send_so() sends 4800 baud SYNC/ASYNC data using SSI1 tx output.  CLOCK is
+// sent, but is not used for EX766 interface, only for the direct connect
+// interface.  This is configured mechanically (via S3 on IC-901 Controller, per
+// the IC-901 operating manual).  Data is 39 bits, justified against b39 (left),
+// b40 is the start bit.  send_so() adds the start bit by masking off bit 40,
+// and then stores the transfer as 5, 8b values to the SPI data register/FIFO
+//--------------------------------------------------------------------------------
 void send_so(uint64_t data){
 	uint8_t		dptr[5];
 	uint8_t 	jk;
@@ -147,18 +142,25 @@ void send_so(uint64_t data){
 
 //**********************************************************************************************//
 //																								//
-//	Serial IN via PF4 & timer2a to create a 4800 baud, 31b data path (1 start bit, 16 stop bit)	//
+//	Serial IN via PQ3 & timer2a to create a 4800 baud, 16b async data path (1 start bit,		//
+//	1+ stop bit).  Edge detect for PQ3 triggers Timer2A to align to the first bit of data.		//
+//	Timer2A then enables SSI3 to transfer 16b of data for reception and resets itself to		//
+//	trap the EOT case where the SSI3 data is received and transfered to the signal buffer.		//
+//	At this point, Timer2A is disabled, and the GPIO edge ISR is re-config'd which re-arms the	//
+//	system for the next data word reception.													//
 //																								//
 //**********************************************************************************************//
 
 //-----------------------------------------------------------------------------
-// get_sin looks for chr in input buffer.  If none, return '\0'
-//	uses circular buffer sin_buf[] which is filled in the TIMER2A interrupt
+// get_sin looks for a word in the buffer.  If none, return 0x0000
+//	uses circular buffer sin_buf[]/sin_tptr/sin_hptr which is filled in the TIMER2A interrupt
 //-----------------------------------------------------------------------------
-U32 get_sin(void){
-	U32 c = 0L;
+U16 get_sin(void){
+	U16 c;
 
-	if(sin_tptr != sin_hptr){								// if head != tail,
+	if(sin_tptr == sin_hptr){								// if head == tail, there is no data, return NULL
+		c = 0;
+	}else{													// data is present:
 		c = sin_buf[sin_tptr++];							// get chr from circ-buff and update tail ptr
 		if(sin_tptr >= SIN_MAX){							// process tail wrap-around
 			sin_tptr = 0;
@@ -168,19 +170,21 @@ U32 get_sin(void){
 }
 
 //-----------------------------------------------------------------------------
-// got_sin checks if there are any sin chrs in the buffer.
+// got_sin returns TRUE if there are any words in the buffer.
 //-----------------------------------------------------------------------------
 char got_sin(void){
-	char c = FALSE;			// return val, default to "no chr"
+	char c;			// return val, default to "no chr"
 
-    if(sin_tptr != sin_hptr){								// if (head != tail) && there is at least 1 msg..
-    	c = TRUE;											// .. set chr ready to get flag
+    if(sin_tptr == sin_hptr){								// if (head != tail) && there is at least 1 msg..
+    	c = FALSE;											// .. set buffer empty flag
+	}else{
+    	c = TRUE;											// .. set data present flag
 	}
 	return c;
 }
 
 //-----------------------------------------------------------------------------
-// flush_sin empties the input buffer.
+// flush_sin empties the input buffer & reconfigs SIN.
 //-----------------------------------------------------------------------------
 void flush_sin(void){
 
@@ -191,10 +195,10 @@ void flush_sin(void){
 }
 
 //-----------------------------------------------------------------------------
-// get_error() returns framing error count
+// get_error() returns and clears framing error status
 //-----------------------------------------------------------------------------
-U32 get_error(void){
-	U32	i;		// temp
+U16 get_error(void){
+	U16	i;		// temp
 
 	i = sin_perr;
 	sin_perr = 0;
@@ -202,7 +206,7 @@ U32 get_error(void){
 }
 
 //-----------------------------------------------------------------------------
-// print_ptr() prints t/h ptrs
+// print_ptr() prints t/h ptrs (debug)
 //-----------------------------------------------------------------------------
 void print_ptr(void){
 	char dbuf[25];
@@ -243,7 +247,7 @@ void print_ptr(void){
 //	events per received word.  The received data period is on the order of 6.5ms, which
 //	equates to a savings of about 2300 ISR events per second.
 //
-// The SSI3 ISR was depricated due to issues with the EOT interrupt not working correctly
+// The SSI3 ISR was deprecated due to issues with the EOT interrupt not working correctly
 //	(or not documented clearly).  Timer2A was re-tasked to produce an ersatz EOT ISR event
 //	after the SSI word transfer time expires (plus a couple of stop-bit delays).
 //
@@ -258,14 +262,13 @@ void print_ptr(void){
 //		* enables SSI3 (but doesn't trigger a transfer)
 
 void gpioq_isr(void){
+//	GPIO_PORTB_AHB_DATA_R &= ~SPARE_PB1;				// !!! debug GPIO
 	GPIO_PORTQ_IM_R = 0;									// disable SIN edge intr
 	GPIO_PORTQ_ICR_R = 0xff;								// pre-clear int flags
 	NVIC_DIS2_R = NVIC_EN2_GPIO_PORTQ;						// disable GPIOQ edge intr
 
-	tmr_pingpong = START_BIT;								// set start-bit mode for timer
-	TIMER2_TAILR_R = (uint16_t)(SIN_START_BIT_TIME);		// start-bit time is 1/2 the baud rate to allow the SSI clock to align to the mid-point of the rcv bit frames
-	TIMER2_ICR_R = TIMERA_MIS_MASK;							// pre-clear A-intr
-	TIMER2_CTL_R |= (TIMER_CTL_TAEN);						// enable timer
+	tmr2a_mode = START_BIT;									// set start-bit mode for timer
+	timer2A_init(SYSCLK, START_BIT_FLAG);
 	ssi3_init();											// enable SSI
 	return;
 }
@@ -275,21 +278,21 @@ void gpioq_isr(void){
 //-----------------------------------------------------------------------------
 //
 // Called when timer2A overflows:
-//	This ISR sequences the SSI3 clock alignment and ersatz EOT events.  At EOT, it gathers data
-//	from the completed SSI3 receive cycle to feed into the sin[] buffer structure.
-//		pingpong = START_BIT is the start-bit alignment mode.  The ISR sends an SSI word to trigger
+//	This ISR completes the SSI3 first-bit clock alignment and ersatz EOT events.  At EOT, it gathers data
+//	from the completed SSI3 receive cycle to feed into the sin[] signal buffer.
+//		"tmr2a_mode = START_BIT" is the start-bit alignment mode.  The ISR sends an SSI word (16b) to trigger
 //			reception of the incoming data that has now been aligned to the center of the data
 //			bit lanes.  The first bit clocked is the data MSb (the start bit is not captured by the SSI)
-//		pingpong = EOT_WAIT signifies the end of the RX cycle.  The ISR pulls in the SSI data and
+//		"tmr2a_mode = EOT_WAIT" signifies the end of the RX cycle.  The ISR pulls in the SSI data and
 //			places it into the sin[] circular buffer.  Note: Buffer overflow errors cause the oldest
-//			data to be lost.  This mode then disables Timer2A and SSI3 and re-arms the GPIO edge ISR
+//			data to be lost.  This mode then disables Timer2A and SSI3 and re-arms/configs the GPIO edge ISR
 //
 //-----------------------------------------------------------------------------
 
 void Timer2A_ISR(void)
 {
 
-	if(tmr_pingpong == EOT_WAIT){
+	if(tmr2a_mode == EOT_WAIT){
 		sinstat_buf[sin_hptr] = SSI3_RIS_R;					// buffer the SSI status
 		SSI3_ICR_R = 0xff;									// clear SSI flags
 		if(sinstat_buf[sin_hptr] != NORM_SSI_STAT){
@@ -306,7 +309,7 @@ void Timer2A_ISR(void)
 				sin_tptr = 0;
 			}
 		}
-		// flip-flop to GPIO edge detect: disable SSI & timer and enable GPIO edge
+		// flip-flop back to GPIO edge detect: disable SSI & timer and enable GPIO edge
 		SSI3_CR1_R = 0x00000000;							// disable SSI
 		GPIO_PORTQ_IEV_R &= ~DATA2;							// set falling edge
 		GPIO_PORTQ_IBE_R &= ~DATA2;							// set one edge
@@ -314,57 +317,20 @@ void Timer2A_ISR(void)
 
 		GPIO_PORTQ_AFSEL_R &= ~DATA2;						// disable alt funct on PQ3 (SSI3)
 		GPIO_PORTQ_ICR_R = 0xff;							// pre-clear int flags
+//		GPIO_PORTB_AHB_DATA_R |= SPARE_PB1;				// !!! debug GPIO
 		GPIO_PORTQ_IM_R |= (DATA2);							// enable SIN edge intr (gpioq) for next message
 		NVIC_EN2_R = NVIC_EN2_GPIO_PORTQ;					// enable GPIOQ edge intr
 		TIMER2_ICR_R = TIMERA_MIS_MASK;						// clear Timer2A-intr
 		TIMER2_CTL_R &= ~(TIMER_CTL_TAEN);					// disable timer
-		GPIO_PORTB_AHB_DATA_R &= ~SPARE_PB0;				// !!! debug GPIO off
+//		GPIO_PORTB_AHB_DATA_R &= ~SPARE_PB0;			// !!! debug GPIO
 	}else{
+//		GPIO_PORTB_AHB_DATA_R |= SPARE_PB1;				// !!! debug GPIO
 		// start bit aligned, trigger SSI transfer & set EOT_WAIT mode
-		GPIO_PORTB_AHB_DATA_R |= SPARE_PB0;					// !!! debug GPIO on
+//		GPIO_PORTB_AHB_DATA_R |= SPARE_PB0;				// !!! debug GPIO
 		SSI3_DR_R = 0;										// send 16 bits
-		TIMER2_ICR_R = TIMERA_MIS_MASK;						// clear all A-intr
-		TIMER2_TAILR_R = (uint16_t)(SIN_EOT_TIME);
-		tmr_pingpong = EOT_WAIT;
+		timer2A_init(SYSCLK, EOT_WAIT_FLAG);
+		tmr2a_mode = EOT_WAIT;
+//	GPIO_PORTB_AHB_DATA_R &= ~SPARE_PB1;				// !!! debug GPIO
 	}
 	return;
 }
-
-//-----------------------------------------------------------------------------
-// SSI3_ISR
-//-----------------------------------------------------------------------------
-//
-// EOT ISR for DATA2.
-//	gathers bits from FIFO, assembles into 32b word, and places into buffer
-//	re-arms GPIOQ edge interrupt
-//
-//-----------------------------------------------------------------------------
-/*
-void SSI3_ISR(void)
-{
-//	U32	i;
-//	U32	dr = 0;
-
-	sin_buf[sin_hptr++] = SSI3_DR_R << 1;					// put rcvd word into buffer
-	if(sin_hptr >= SIN_MAX){								// process head wrap-around
-		sin_hptr = 0;
-	}
-	if(sin_hptr == sin_tptr){
-		sin_tptr += 1;
-		if(sin_tptr >= SIN_MAX){
-			sin_tptr = 0;
-		}
-	}
-//	SSI3_IM_R &= ~SSI_IM_EOTIM;								// disable end of tx ISR
-	SSI3_IM_R = 0;								// disable end of tx ISR
-	SSI3_CR1_R = 0x00000000;								// disable SSI
-	GPIO_PORTQ_IEV_R &= ~DATA2;								// falling edge
-	GPIO_PORTQ_IBE_R &= ~DATA2;								// one edge
-	GPIO_PORTQ_IS_R &= ~DATA2;								// edge ints
-
-	GPIO_PORTQ_AFSEL_R &= ~DATA2;							// disable alt funct on PQ3 (SSI3)
-	GPIO_PORTQ_ICR_R = 0xff;								// pre-clear int flags
-	GPIO_PORTQ_IM_R |= (DATA2);								// enable SIN edge intr (gpioq) for next message
-	NVIC_EN2_R = NVIC_EN2_GPIO_PORTQ;						// enable GPIOQ edge intr
-	return;
-}*/

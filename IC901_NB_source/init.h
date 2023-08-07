@@ -68,7 +68,7 @@
 #define TIMERA_MIS_MASK	TIMER_MIS_AMASK
 #define TIMERB_MIS_MASK	TIMER_MIS_BMASK
 
-#define	DIAL_DEBOUNCE	75			// 75 ms dial debounce
+#define	DIAL_DEBOUNCE	10			// 10 ms dial debounce
 
 // ***********************
 // GPIO PORT BITMAPS
@@ -185,8 +185,8 @@
 #define	S4_BIT			(0x1000)
 #define	S4_FLAG			(0x02)
 
-#define	KP_DEBOUNCE_DN	3			// 10 ms of keypad debounce
-#define	KP_DEBOUNCE_UP	5			// 25 ms of keypad debounce
+#define	KP_DEBOUNCE_DN	2			// 20 ms of keypad debounce
+#define	KP_DEBOUNCE_UP	3			// 30 ms of keypad debounce
 
 // PORTJ
 #define PORTJ SYSCTL_RCGCGPIO_R8
@@ -279,8 +279,8 @@
 #define	SPARE_PB0		0x01		    	// PB0 = spare pad			(i)
 #define	PORTB_INIT	(0)
 #define PORTB_DEN	0xff
-#define PORTB_DIR	(CLK_DATA1 | SPARE_PB0)
-#define PORTB_PUR	(CLK_DATA1|SPARE_PB1|SPARE_PB2|SPARE_PB3|NU_PB4)
+#define PORTB_DIR	(CLK_DATA1 | SPARE_PB0 | SPARE_PB1)
+#define PORTB_PUR	(CLK_DATA1|SPARE_PB2|SPARE_PB3|NU_PB4)
 
 // PORTA
 #define PORTA SYSCTL_RCGCGPIO_R0
@@ -360,7 +360,7 @@
 #define	SSI1_SCR	99										// SSI1 SCR value
 #define	SSI1_DVSR	(SYSCLK / ((1 + SSI1_SCR) * SSI1_BR))	// SSI1 SCR value
 
-#define	SSI2_BR		100000 									// SSI2, LCD tx, bit rate (100 KHz)
+#define	SSI2_BR		200000 //100000 									// SSI2, LCD tx, bit rate (100 KHz)
 #define	SSI2_SCR	15										// SSI2 SCR value
 #define	SSI2_DVSR	(SYSCLK / ((1 + SSI2_SCR) * SSI2_BR))	// SSI2 SCR value
 
@@ -708,8 +708,8 @@ void set_beep(U16 beep_frq, U16 b_count);
 void do_beep(U16 beep_cycles);
 void Timer0A_ISR(void);
 
-void gpiob_isr(void);
-void gpioc_isr(void);
+void gpiof_isr(void);
+void gpiog_isr(void);
 void Timer0B_ISR(void);
 
 //-----------------------------------------------------------------------------

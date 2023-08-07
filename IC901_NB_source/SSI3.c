@@ -52,3 +52,44 @@ void ssi3_init(void){
 
 	return;
 }
+
+// ARCHIVE ****************************************************************
+//
+//-----------------------------------------------------------------------------
+// SSI3_ISR
+//-----------------------------------------------------------------------------
+//
+// EOT ISR for DATA2.
+//	gathers bits from FIFO, assembles into 32b word, and places into buffer
+//	re-arms GPIOQ edge interrupt
+//
+//-----------------------------------------------------------------------------
+/*
+void SSI3_ISR(void)
+{
+//	U32	i;
+//	U32	dr = 0;
+
+	sin_buf[sin_hptr++] = SSI3_DR_R << 1;					// put rcvd word into buffer
+	if(sin_hptr >= SIN_MAX){								// process head wrap-around
+		sin_hptr = 0;
+	}
+	if(sin_hptr == sin_tptr){
+		sin_tptr += 1;
+		if(sin_tptr >= SIN_MAX){
+			sin_tptr = 0;
+		}
+	}
+//	SSI3_IM_R &= ~SSI_IM_EOTIM;								// disable end of tx ISR
+	SSI3_IM_R = 0;								// disable end of tx ISR
+	SSI3_CR1_R = 0x00000000;								// disable SSI
+	GPIO_PORTQ_IEV_R &= ~DATA2;								// falling edge
+	GPIO_PORTQ_IBE_R &= ~DATA2;								// one edge
+	GPIO_PORTQ_IS_R &= ~DATA2;								// edge ints
+
+	GPIO_PORTQ_AFSEL_R &= ~DATA2;							// disable alt funct on PQ3 (SSI3)
+	GPIO_PORTQ_ICR_R = 0xff;								// pre-clear int flags
+	GPIO_PORTQ_IM_R |= (DATA2);								// enable SIN edge intr (gpioq) for next message
+	NVIC_EN2_R = NVIC_EN2_GPIO_PORTQ;						// enable GPIOQ edge intr
+	return;
+}*/

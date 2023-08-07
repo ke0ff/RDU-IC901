@@ -29,6 +29,9 @@ union LCDREG{
 								//  ints are lilendian, so i[7] = msB (we will use i[6] thru i[0])
 };
 
+// read_sin_flags() read/clear semaphores
+#define	QUERRY_FLAGS	0
+#define	CLEARALL_FLAGS	0xffffffffL
 
 // mem scan COS memory defines
 #define	MAX_COS_MEM		4		// "last cos" memory
@@ -98,120 +101,8 @@ union LCDREG{
 #define	MHZ_OFFS	0x40
 #define	MHZ_OFF		0x20
 #define	MHZ_MASK	0x1f
-/*
-// LCD chip command masks
-#define	CS2_MASK	0x80
-#define	CS1_MASK	0x40
-#define	DA_CM_MASK	0x20
-#define	LEN_MASK	0x1f
 
-// LCD chip commands
-#define	MODE_SET	0x49			// /3 time-div, 1/3 bias, 2E-8 fdiv
-#define	BLINK_SLOW	0x1A			// low-bit is flash-rate
-#define	BLINK_FAST	0x1B			//  "   " ...
-#define	BLINK_OFF	0x18
-#define	DISP_ON		0x11
-#define	DISP_OFF	0x10
-#define	WITH_DECODE	0x15
-#define	WITHOUT_DECODE	0x14
-#define	LOAD_PTR	0xE0			// OR with (0x1f masked address)
-#define	WR_DMEM		0xD0			// OR with (0x0f masked data)
-#define	OR_DMEM		0xB0			// OR with (0x0f masked data)
-#define	AND_DMEM	0x90			// OR with (0x0f masked data)
-#define	CLR_DMEM	0x20
-#define	WR_BMEM		0xC0			// OR with (0x0f masked data)
-#define	OR_BMEM		0xA0			// OR with (0x0f masked data)
-#define	AND_BMEM	0x80			// OR with (0x0f masked data)
-#define	CLR_BMEM	0x00
-
-#define	MAX_SRF		7				// #srf bargraph segments
-#define	MSMET_ADDR	0x06
-#define	SSMET_ADDR	0x1b
-
-// LCD segment bit defines (addr and segment map)
-//	CS1
-#define	MMEM_ADDR		0x01
-#define	MDUP		0x1
-#define	MDUP_ADDR		0x04
-#define	MMIN		0x2
-#define	MMIN_ADDR		0x04
-//#define	MSKP		0x4
-#define	MSKP_ADDR		0x04
-#define	MTNE		0x1
-#define	MTNE_ADDR		0x05
-#define	MM			0x2
-#define	MM_ADDR			0x05
-
-#define	MSRF6		0x4
-#define	MSRF6_ADDR		0x06
-#define	MSRF3		0x1
-#define	MSRF4		0x2
-#define	MSRF5		0x4
-#define	MSRF345_ADDR	0x07
-#define	MSRF0		0x1
-#define	MSRF1		0x2
-#define	MSRF2		0x4
-#define	MSRF012_ADDR	0x08
-#define	M00			0x2
-#define	M00_ADDR	0x09
-#define	M0_ADDR		0x0a
-
-#define	AOW			0x1
-#define	AOW_ADDR		0x1d
-#define	ALOW		0x2
-#define	ALOW_ADDR		0x1d
-
-#define	ARIT		0x1
-#define	ARIT_ADDR		0x1f
-#define	AVXO		0x2
-#define	AVXO_ADDR		0x1f
-#define	ATS			0x4
-#define	ATS_ADDR		0x1f
-
-//	CS2
-#define	SMEM_ADDR	0x02
-#define	SDUP		0x1
-#define	SDUP_ADDR	0x05
-#define	SMIN		0x2
-#define	SMIN_ADDR	0x05
-//#define	SSKP		0x4
-#define	SSKP_ADDR	0x05
-#define	STNE		0x1
-#define	STNE_ADDR	0x06
-#define	SM			0x2
-#define	SM_ADDR		0x06
-#define	S00			0x2
-#define	S00_ADDR	0x07
-
-#define	S0_ADDR		0x08
-#define	S6			0x1
-#define	S6_ADDR		0x1a
-
-#define	SSRF6		0x4
-#define	SSRF6_ADDR		0x1b
-#define	SSRF3		0x1
-#define	SSRF4		0x2
-#define	SSRF5		0x4
-#define	SSRF345_ADDR	0x1c
-#define	SSRF0		0x1
-#define	SSRF1		0x2
-#define	SSRF2		0x4
-#define	SSRF012_ADDR	0x1d
-
-#define	ASUB		0x1
-#define	ASUB_ADDR	0x1e
-#define	ALCK		0x2
-#define	ALCK_ADDR	0x1e
-
-#define	APRG		0x1
-#define	APRG_ADDR	0x1f
-#define	AMHZ		0x2
-#define	AMHZ_ADDR	0x1f
-#define	ABND		0x4
-#define	ABND_ADDR	0x1f*/
-
-
-#define	MAX_SRF		7				// #srf bargraph segments
+#define	MAX_SRF		15							// max bit code for #srf bargraph segments
 #define	MSMET_ADDR	0x06
 #define	SSMET_ADDR	0x1b
 
