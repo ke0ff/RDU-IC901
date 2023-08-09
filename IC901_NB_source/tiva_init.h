@@ -65,7 +65,7 @@ void timer1B_init(U32 sys_clk);
 void timer2A_init(U32 sys_clk, U8 bit_start);
 #define	START_BIT_FLAG	1			// bit_start defines
 #define	EOT_WAIT_FLAG	0
-void timer2B_init(U32 sys_clk);
+void timer3B_init(U32 sys_clk);
 U16 hib_init(U8 init_switch);
 //-----------------------------------------------------------------------------
 // End Of File

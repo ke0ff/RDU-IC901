@@ -451,7 +451,6 @@ void  process_SIN(U8 cmd){
 		sin_addr3 = 0;
 		sin_flags = 0;
 		lerr = 10L;
-		init_radio();									// init radio and data structures
 		ptt_mem = 0x10L;
 	}else{												// normal (run) branch
 		if(got_sin()){
@@ -462,8 +461,7 @@ void  process_SIN(U8 cmd){
 			sin_addrs = sin_data & SIN_ADDR_MASK;		// separate address from data payload
 			switch(sin_addrs){							// process SIN data based on addr
 			case SIN_ADDR_INIT:				// ADDR 0 - IPL init results (modules present)
-				sin_addr0 = sin_data;					// store new band present data
-				ux_present_flags = sin_data;
+				sin_addr0 = sin_data;					// store new band present data (!!! for debug only)
 				break;
 
 			case  SIN_ADDR_PRIME:			// ADDR 1 - SRF and COS
@@ -1138,6 +1136,19 @@ U8  get_busy(void){
 		}
 	}while(is_wait() && !bzy);
 	return bzy;
+}
+
+//-----------------------------------------------------------------------------
+// set_present() stores ux_present_flags
+//-----------------------------------------------------------------------------
+void  set_present(U16 ii){
+
+	// we should only get one of these settings per IPL cycle -- set err flag if we already stored something to "ux_present_flags"
+	if(ux_present_flags){
+		sin_flags |= SIN_PRSNTERR_F;
+	}
+	ux_present_flags = ii;
+	return;
 }
 
 //-----------------------------------------------------------------------------

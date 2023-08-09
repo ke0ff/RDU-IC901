@@ -15,6 +15,7 @@
  *    Copied from IC900_RDU application.  See that project's revnotes prior to 10-19-21 for historical rev status.
  *
  *    Project scope rev History:
+ *    08-08-23 jmh:  Moved LCD blink timer to Timer3B to avoid conflicts with the SIN start bit alignment system
  *    08-05-23 jmh:  ASD reception now working reliably (one must fully reset the timer resource at timer events to change the timing value to the next event).
  *    07-30-23 jmh:	 In progress: Modification work to convert 123 code to 1294 platform and also modify for the change from IC900 to IC901.
  *    03-23-22		 * 1st-compile complete with CLI functioning.
@@ -103,11 +104,12 @@
 //		300ns).
 //
 //	T0CCP0 drives the BEEP output
+//	T0CCP1 drives application timers, COL[1:0] outputs and reads the 8 key matrix inputs and 3 discrete key inputs.
+//		These signals and activity timers feed into a state machine that qualifies and buffers matrix key-presses.
 //	T1CCP0 drives UART0 TX pacing
 //	T1CCP1 drives bbSSI clock (not used here)
 //	T2CCP0 drives DATA2 start bit alignment
-//	T3CCP0 drives application timers, COL[1:0] outputs and reads the 8 key matrix inputs and 3 discrete key inputs.
-//		These signals and activity timers feed into a state machine that qualifies and buffers matrix key-presses.
+//	T3CCP1 drives LCD blink timer
 //
 //	M0PWM0 controls LED_TX brightness
 //	M0PWM1 controls LED_RXM brightness
@@ -123,7 +125,7 @@
 //		Timer1A			--			ISR UART1 serial pacing timer
 //		Timer1B			--			ISR bit-bang SPI timer (spi.c, deprecated)
 //		Timer2A			--			ISR DATA2 async input, start-bit alignment
-//		Timer2B			--			ISR LCD SSI pacing and blink timer
+//		Timer3B			--			ISR LCD SSI pacing and blink timer
 //		GPIO FE			PQ3:		ISR (detects DATA2 start bit, starts Timer2A)
 //		UART0 			PA[1:0]:	ISR(RX) debug UART
 //		UART2			PA[7:6]:	ISR(RX) bluetooth I/O
@@ -324,7 +326,7 @@ char kp_asc(U32 keycode);
 //		acceptance.  Once accepted, the baud rate is frozen.  If rejected, baud rate
 //		returns to 115200.  The first valid command at the default rate will also
 //		freeze the baud rate.  Once frozen, the baud rate can not be changed until
-//		system is reset.
+//		the system is reset.
 //*****************************************************************************
 int main(void){
 	volatile uint32_t ui32Loop;
@@ -349,7 +351,6 @@ int main(void){
 	got_cmd = FALSE;
 	offset = 0;
 	cur_baud = 0;
-//	iplt3 = 1;											// init timer3
     iplt2 = 1;											// init timer1
 
 #ifdef PLLCLK
@@ -425,7 +426,7 @@ int main(void){
     	rebufN[1] = rebuf1;
     	rebufN[2] = rebuf2;
     	rebufN[3] = rebuf3;
-//    	while(iplt2);									// wait for timer to finish intialization
+    	while(iplt2);									// wait for timer to finish intialization
     	wait(200);										// else, pad a bit of delay for POR to settle..
     	dispSWvers(buf); 								// display reset banner
     	wait(10);										// a bit of delay..
@@ -697,6 +698,7 @@ char process_IO(U8 flag){
 		ptt_mode = 0xff;								// force init
 		process_SOUT(flag);								// ! SOUT init must execute before SIN init !
 		process_SIN(flag);
+		init_radio();									// init radio and data structures
 		process_UI(flag);
 //		process_CCMD(flag);
 	}

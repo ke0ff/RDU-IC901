@@ -137,7 +137,12 @@ union LCDREG{
 #define	MS9			(0x10 | MS7)				// S9
 #define	MS10		(0x20 | MS9)				// S9+10
 #define	MS20		(0x40 | MS10)				// S9+20
+#define	MS30		(MS20 & ~MS1)				// S9+30
+#define	MS40		(MS20 & ~MS3)				// S9+40
+#define	MS50		(MS20 & ~MS5)				// S9+50
+#define	MS60		(MS20 & ~MS7)				// S9+60
 #define	MS_MASK		0x7f
+#define	MS_CLEAR	MS20
 
 #define	SS_WORD		3							// word index
 #define	SS_POS		34							// sub smet bit position
@@ -148,7 +153,12 @@ union LCDREG{
 #define	SS9			(0x04 | SS7)				// S9
 #define	SS10		(0x08 | SS9)				// S9+10
 #define	SS20		(0x01 | SS10)				// S9+20
+#define	SS30		(SS20 & ~SS1)				// S9+30
+#define	SS40		(SS20 & ~SS3)				// S9+40
+#define	SS50		(SS20 & ~SS5)				// S9+50
+#define	SS60		(SS20 & ~SS7)				// S9+60
 #define	SS_MASK		0xfd
+#define	SS_CLEAR	SS20
 
 #define	SQL_WORD	2							// word index
 #define	SQL_POS		46							// sql tape bit position
@@ -162,6 +172,7 @@ union LCDREG{
 #define	SQL8		(0x080 | SQL7)				// 8 bar setting
 #define	SQL9		(0x100 | SQL8)				// 9 bar setting
 #define	SQL_MASK	0x1ff
+#define	SQL_CLEAR	SQL9
 
 #define	SQLD_WORD	2
 #define	SQLD		((uint64_t)1<<55)
@@ -182,7 +193,9 @@ union LCDREG{
 #define	VOL7		(0x001 | VOL6)				// 7 bar setting
 #define	VOL8		(0x002 | VOL7)				// 8 bar setting
 #define	VOL9		(0x004 | VOL8)				// 9 bar setting
+
 #define	VOL_MASK	0x2f7
+#define	VOL_CLEAR	VOL9
 
 #define	MMODE_WORD	1
 #define	MMODE_FM	((uint64_t)1<<15)
@@ -366,6 +379,8 @@ void mfreq(U32 dfreq, U8 blink);
 void sfreq(U32 dfreq, U8 blink);
 void msmet(U8 srf, U8 blink);
 void ssmet(U8 srf, U8 blink);
+void squtape(U8 squ, U8 blink);
+void voltape(U8 vol, U8 blink);
 U8 mputs_lcd(char *s, U8 dp_tf);
 U8 sputs_lcd(char *s, U8 dp_tf);
 void mmem(U8 mn);

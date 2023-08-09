@@ -31,6 +31,7 @@
 #include "serial.h"					// serial I/O functions
 #include "ssi1.h"					// SOUT
 #include "ssi3.h"					// SIN
+#include "radio.h"					// SIN
 
 //-----------------------------------------------------------------------------
 // local declarations
@@ -291,6 +292,7 @@ void gpioq_isr(void){
 
 void Timer2A_ISR(void)
 {
+	U16	ii;			// temp
 
 	if(tmr2a_mode == EOT_WAIT){
 		sinstat_buf[sin_hptr] = SSI3_RIS_R;					// buffer the SSI status
@@ -298,7 +300,8 @@ void Timer2A_ISR(void)
 		if(sinstat_buf[sin_hptr] != NORM_SSI_STAT){
 			sin_perr |= SIN_SSIERR;							// set SSI error
 		}
-		sin_buf[sin_hptr++] = SSI3_DR_R;					// put rcvd word into buffer
+		ii = SSI3_DR_R;
+		sin_buf[sin_hptr++] = ii;							// put rcvd word into buffer
 		if(sin_hptr >= SIN_MAX){							// process head wrap-around
 			sin_hptr = 0;
 		}
@@ -308,6 +311,9 @@ void Timer2A_ISR(void)
 			if(sin_tptr >= SIN_MAX){						// process tail wrap-around
 				sin_tptr = 0;
 			}
+		}
+		if(!(ii & SIN_ADDR_MASK)){							// special case: save module present status word directly to flag register
+			set_present(ii);
 		}
 		// flip-flop back to GPIO edge detect: disable SSI & timer and enable GPIO edge
 		SSI3_CR1_R = 0x00000000;							// disable SSI

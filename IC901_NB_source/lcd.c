@@ -13,6 +13,18 @@
 
 /********************************************************************
  *  File scope declarations revision history:
+ *    08-08-23 jmh:  Coded/debugged voltape() and squtape().  Re-enabled LCD blink timer and moved to Timer3B.
+ *    08-06-23 jmh:  Adapted from RDU-900 clone project.  Modified to produce serial output for the LC7582A LCD driver ICs
+ *    				 that are present in the IC-901 controller.  A periodic timer ISR handles blinking.  The SW has to
+ *    				 maintain the segment memory and a blink array that is ANDed with the segment memory to establish which
+ *    				 segments will be turned off on even blink cycles.  SSI2 and Timer2B (both in ssi2.c) drive the SPI
+ *    				 and timing interface.
+ *    				 The LCD Fns in this file were modified to use the new, direct-segment architecture employed by the
+ *    				 LC7582A which differs from the command/argument model used on the IC900 hardware.  The main difference
+ *    				 lies in the lack of a BCD mode in the driver IC.  Since there was already a text2segment path coded,
+ *    				 this was then employed to send all messages to the 7-seg areas of the LCD (including numbers-only msgs).
+ *    				 Modified SMETER to display all 15 bits of SRF data by negating the lower segments of the bar-graph
+ *    				 for levels above "7".  When the 3 top segments are all that is lit, the level is "0xF".
  *    06-19-21 jmh:  creation date
  *
  *******************************************************************/
@@ -78,10 +90,16 @@ U16	tone_list[] = {  670,  719,  744,  770,  797,  825,  854,  885,
 
 // Mem ordinals         0         0123456789012345678901234
 char mem_ordinal[] = { "0123456789ABDEFGHJKLMNPRSTUWYZ()[]" };
-uint8_t	smetm_map[] = { 0, 0, MS1, MS3, MS5, MS7, MS9, MS10, MS20, MS20, MS20, MS20, MS20, MS20, MS20, MS20 };
-uint8_t	smets_map[] = { 0, 0, SS1, SS3, SS5, SS7, SS9, SS10, SS20, SS20, SS20, SS20, SS20, SS20, SS20, SS20 };
+uint8_t	smetm_map[] = { 0, 0, MS1, MS3, MS5, MS7, MS9, MS10, MS20, MS20, MS30, MS30, MS40, MS40, MS50, MS60 };
+uint8_t	smets_map[] = { 0, 0, SS1, SS3, SS5, SS7, SS9, SS10, SS20, SS20, SS30, SS30, SS40, SS40, SS50, SS60 };
 uint8_t	digmap_m[] = { 0x80|8, 0x80|16, 0x80|24, 0x80|34, 0x80|42, 0x80|50, 8 };
 uint8_t	digmap_s[] = { 44, 36, 28, 0x80|18, 0x80|10, 0x80|2, 0x40|44 };
+
+uint16_t	sql_map[] = { 0, SQL1, SQL2, SQL3, SQL4, SQL5, SQL6, SQL7, SQL8, SQL9 };
+#define	SQL_LEN	(sizeof(sql_map)/sizeof(uint16_t))
+
+uint16_t	vol_map[] = { 0, VOL1, VOL2, VOL3, VOL4, VOL5, VOL6, VOL7, VOL8, VOL9 };
+#define	VOL_LEN	(sizeof(vol_map)/sizeof(uint16_t))
 
 // 901 LCD maps
 
@@ -268,6 +286,7 @@ void process_UI(U8 cmd){
 void update_lcd(U8 focus, U8 forced_focus){
 	U8	i;
 
+	GPIO_PORTB_AHB_DATA_R |= SPARE_PB0;				// !!! debug GPIO
 	//**************************************
 	// update low/hi power display icon
 	i = get_lohi(focus, 0xff);
@@ -339,6 +358,7 @@ void update_lcd(U8 focus, U8 forced_focus){
 			sfreq(get_freq(SUB), 0);
 		}
 	}
+	GPIO_PORTB_AHB_DATA_R &= ~SPARE_PB0;				// !!! debug GPIO
 	return;
 }	// end update_lcd()
 
@@ -362,6 +382,7 @@ U8 process_MS(U8 mode){
 
 //	char dgbuf[30];	// !!!!debug
 
+	GPIO_PORTB_AHB_DATA_R |= SPARE_PB1;				// !!! debug GPIO
 	//**************************************
 	// process IPL init
 	if(mode == 0xff){
@@ -387,7 +408,7 @@ U8 process_MS(U8 mode){
 			}
 			sin_a1 = fetch_sin(1);										// update data
 			// check if squelch adjust
-			if(!(xmodeq & SQU_XFLAG)){
+//			if(!(xmodeq & SQU_XFLAG)){
 				if(iflags & SIN_SRFM_CF){
 					// update SRF
 					ii = sin_a1 >> SIN1_SRF_MAIN_B;						// isolate main SRF
@@ -400,9 +421,9 @@ U8 process_MS(U8 mode){
 						mmem(get_memnum(MAIN, 0));						// update mem#
 					}
 				}
-			}
+//			}
 			// check if vol adjust
-			if(!(xmodeq & VOL_XFLAG)){
+//			if(!(xmodeq & VOL_XFLAG)){
 				if(iflags & SIN_SRFS_CF){
 					// update SRF
 					ii = sin_a1 >> SIN1_SRF_SUB_B;						// isolate sub SRF
@@ -415,7 +436,7 @@ U8 process_MS(U8 mode){
 						smem(get_memnum(SUB, 0));						// update mem#
 					}
 				}
-			}
+//			}
 			if(iflags & (SIN_SQSM_CF|SIN_SQSS_CF)){						// LED updates (MRX, MTX, SRX)
 				// update RX LEDs
 				if((sin_a1 & SIN_SQSA) && !(sys_err & (NO_B_PRSNT|NO_MUX_PRSNT))){
@@ -471,13 +492,13 @@ U8 process_MS(U8 mode){
 		}
 		if((xmodeq & VOL_XFLAG) && (!v_time(0))){						// if vol x-mode timeout:
 			xmodeq &= ~VOL_XFLAG;
-			iflags |= SIN_SRFS_CF;										// update sub SRFs
-			ssmet(0xff, 0);												// update glass
+//			iflags |= SIN_SRFS_CF;										// update sub SRFs
+//			ssmet(0xff, 0);												// update glass
 		}
 		if((xmodeq & SQU_XFLAG) && (!q_time(0))){						// if squ x-mode timeout:
 			xmodeq &= ~SQU_XFLAG;
-			iflags |= SIN_SRFM_CF;										// update main SRFs
-			msmet(0xff, 0);												// update glass
+//			iflags |= SIN_SRFM_CF;										// update main SRFs
+//			msmet(0xff, 0);												// update glass
 		}
 		if((xmodeq & OFFS_XFLAG) && (!offs_time(0))){					// if offs x-mode timeout:
 			do_2beep();													// timeoute alert beep (Morse "I")
@@ -726,7 +747,7 @@ U8 process_MS(U8 mode){
 				v_time(1);
 				xmodeq |= VOL_XFLAG;
 				adjust_vol(band_focus, 1);
-				ssmet(0x80 | adjust_vol(band_focus, 0), 0);				// signal a volume update
+				voltape(adjust_vol(band_focus, 0), 0);					// signal a volume update
 				force_push();											// force update to NVRAM
 				break;
 
@@ -738,7 +759,7 @@ U8 process_MS(U8 mode){
 				v_time(1);
 				xmodeq |= VOL_XFLAG;
 				adjust_vol(band_focus, -1);
-				ssmet(0x80 | adjust_vol(band_focus, 0), 0);
+				voltape(adjust_vol(band_focus, 0), 0);
 				force_push();											// force update to NVRAM
 				break;
 
@@ -750,7 +771,7 @@ U8 process_MS(U8 mode){
 				q_time(1);
 				xmodeq |= SQU_XFLAG;
 				adjust_squ(band_focus, 1);
-				msmet(0x80 | adjust_squ(band_focus, 0), 0);
+				squtape(adjust_squ(band_focus, 0), 0);
 				force_push();											// force update to NVRAM
 				break;
 
@@ -758,7 +779,7 @@ U8 process_MS(U8 mode){
 				q_time(1);
 				xmodeq |= SQU_XFLAG;
 				adjust_squ(band_focus, -1);
-				msmet(0x80 | adjust_squ(band_focus, 0), 0);
+				msmet(adjust_squ(band_focus, 0), 0);
 				force_push();											// force update to NVRAM
 				break;
 
@@ -1096,6 +1117,7 @@ U8 process_MS(U8 mode){
 			}
 		}
 	}
+	GPIO_PORTB_AHB_DATA_R &= ~SPARE_PB1;				// !!! debug GPIO
 	return band_focus;
 }	// end process_MS()
 
@@ -1679,7 +1701,7 @@ void mfreq(U32 binfreq, U8 lzero){
 //	U32	jj;
 
 	if(sys_err & (NO_B_PRSNT|NO_MUX_PRSNT)){			// trap "off" and "off-line" error states
-		wait(500);
+		wait(50);
 		if(sys_err & NO_B_PRSNT){
 			// disp "----" (off-line)
 			mputs_lcd(" NOBASE ", 0);
@@ -1771,12 +1793,12 @@ void msmet(U8 srf, U8 blink){
 
 	if(srf > MAX_SRF) i = MAX_SRF;
 	else i = srf;
-	clear_seg((uint64_t)smetm_map[MAX_SRF] << MS_POS, NOBLINK, MS_WORD); // clear meter
+	clear_seg((uint64_t)MS_CLEAR << MS_POS, NOBLINK, MS_WORD);			// clear meter
 	or_seg((uint64_t)smetm_map[i] << MS_POS, NOBLINK, MS_WORD); 		// copy new meter to seg reg
 	if(blink){
-		clear_seg((uint64_t)smetm_map[MAX_SRF] << MS_POS, LBLINK, MS_WORD);
+		clear_seg((uint64_t)MS_CLEAR << MS_POS, LBLINK, MS_WORD);
 	}else{
-		or_seg((uint64_t)smetm_map[MAX_SRF] << MS_POS, LBLINK, MS_WORD);
+		or_seg((uint64_t)MS_CLEAR << MS_POS, LBLINK, MS_WORD);
 	}
 	lcd_send(get_blink());
 	return;
@@ -1790,12 +1812,86 @@ void ssmet(U8 srf, U8 blink){
 
 	if(srf > MAX_SRF) i = MAX_SRF;
 	else i = srf;
-	clear_seg((uint64_t)smets_map[MAX_SRF] << SS_POS, NOBLINK, SS_WORD); // clear meter
+	clear_seg((uint64_t)SS_CLEAR << SS_POS, NOBLINK, SS_WORD);			// clear meter
 	or_seg((uint64_t)smets_map[i] << SS_POS, NOBLINK, SS_WORD); 		// copy new meter to seg reg
 	if(blink){
-		clear_seg((uint64_t)smets_map[MAX_SRF] << SS_POS, LBLINK, SS_WORD);
+		clear_seg((uint64_t)SS_CLEAR << SS_POS, LBLINK, SS_WORD);
 	}else{
-		or_seg((uint64_t)smets_map[MAX_SRF] << SS_POS, LBLINK, SS_WORD);
+		or_seg((uint64_t)SS_CLEAR << SS_POS, LBLINK, SS_WORD);
+	}
+	lcd_send(get_blink());
+	return;
+}
+
+//-----------------------------------------------------------------------------
+// sets the SQU tape: squ = 0-34
+//			seg		seg
+//	seg		addr	data
+//	6		0x06	0x4
+//	3		0x07	0x1
+//	4		0x07	0x2
+//	5		0x07	0x4
+//	0		0x08	0x1
+//	1		0x08	0x2
+//	2		0x08	0x4
+//
+// if hi-bit of srf set, disp v/q level (affects mem-ch digit also).
+//	SRF met forms most significant slider of level.  Each segment is 4 units.
+//
+//	Total level = (number of SRF segments * 4)
+//
+// if squ == 0xff, the Fn clears the tape.
+//
+//-----------------------------------------------------------------------------
+
+void squtape(U8 squ, U8 blink){
+	U8	i;
+#define	MAX_VSQ	34
+
+	if(squ == (MAX_VSQ - 1)){
+		squ -= 1;
+	}
+	if(squ >= MAX_VSQ){
+		i = SQL_LEN - 1;
+	}else{
+		if(squ == 0){
+			i = 0;
+		}else{
+			i = ((squ-1)/4) + 1;
+		}
+	}
+	clear_seg((uint64_t)SQL_CLEAR << SQL_POS, NOBLINK, SQLD_WORD);		// clear squ tape
+	or_seg((uint64_t)sql_map[i] << SQL_POS, NOBLINK, SQLD_WORD); 		// copy new tape to seg reg
+	if(blink){
+		clear_seg((uint64_t)SQL_CLEAR << SQL_POS, LBLINK, SQLD_WORD);
+	}else{
+		or_seg((uint64_t)SQL_CLEAR << SQL_POS, LBLINK, SQLD_WORD);
+	}
+	lcd_send(get_blink());
+	return;
+}
+
+void voltape(U8 vol, U8 blink){
+	U8	i;
+
+	if(vol == (MAX_VSQ - 1)){
+		vol -= 1;
+	}
+	if(vol >= MAX_VSQ){
+		i = VOL_LEN - 1;
+	}else{
+		if(vol == 0){
+			i = 0;
+		}else{
+			i = ((vol-1)/4) + 1;
+		}
+	}
+	clear_seg((uint64_t)VOL_CLEAR << VOL_POS, NOBLINK, VOL_WORD);		// clear vol tape
+	or_seg((uint64_t)vol_map[i] << VOL_POS, NOBLINK, VOL_WORD); 		// copy new tape to seg reg
+	if(blink){
+		clear_seg((uint64_t)VOL_CLEAR << VOL_POS, LBLINK, VOL_WORD);
+	}else{
+		or_seg((uint64_t)VOL_CLEAR << VOL_POS, LBLINK, VOL_WORD);
 	}
 	lcd_send(get_blink());
 	return;
@@ -1811,25 +1907,25 @@ void ssmet(U8 srf, U8 blink){
 //	(3 horiz bars).  Alternate invalid chr is 0x09 (segments "ab",character '#').
 
 U8 asc7segm[] = {										// main freq LUT
-	0x00, 0x2A, 0x14, 0x2A, 0x2A, 0x31, 0x2A, 0x04,		// <spc>, !, ", #, $, %, &, ',
-	0x23, 0x62, 0x2A, 0x25, 0x2A, 0x20, 0x2A, 0x31,		// (, ), *, +, ,, -, ., /,
-	0x5F, 0x50, 0x3B, 0x7A, 0x74, 0x6E, 0x6F, 0x58,		// 0, 1, 2, 3, 4, 5, 6, 7,
-	0x7F, 0x7E, 0x2A, 0x2A, 0x23, 0x22, 0x62, 0x39,		// 8, 9, :, ;, <, =, >, ?,
-	0x7B, 0x7D, 0x67, 0x23, 0x73, 0x2F, 0x2D, 0x4F,		// @, A, B, C, D, E, F, G,
-	0x65, 0x40, 0x53, 0x25, 0x07, 0x69, 0x61, 0x63,		// H, I, J, K, L, M, N, O,
-	0x3D, 0x7C, 0x21, 0x4e, 0x27, 0x43, 0x57, 0x4B,		// P, Q, R, S, T, U, V, W,
-	0x75, 0x76, 0x1B, 0x0F, 0x64, 0x5A, 0x1C, 0x02		// X, Y, Z, [, \, ], ^, _
+	0x00, 0x2A, 0x14, 0x2A, 0x2A, 0x31, 0x2A, 0x04,		// <spc>  !  "  #  $  %  &  '
+	0x23, 0x62, 0x2A, 0x25, 0x2A, 0x20, 0x2A, 0x31,		//     (  )  *  +  ,  -  .  /
+	0x5F, 0x50, 0x3B, 0x7A, 0x74, 0x6E, 0x6F, 0x58,		//     0  1  2  3  4  5  6  7
+	0x7F, 0x7E, 0x2A, 0x2A, 0x23, 0x22, 0x62, 0x39,		//     8  9  :  ;  <  =  >  ?
+	0x7B, 0x7D, 0x67, 0x23, 0x73, 0x2F, 0x2D, 0x4F,		//     @  A  B  C  D  E  F  G
+	0x65, 0x40, 0x53, 0x25, 0x07, 0x69, 0x61, 0x63,		//     H  I  J  K  L  M  N  O
+	0x3D, 0x7C, 0x21, 0x4e, 0x27, 0x43, 0x57, 0x4B,		//     P  Q  R  S  T  U  V  W
+	0x75, 0x76, 0x1B, 0x0F, 0x64, 0x5A, 0x1C, 0x02		//     X  Y  Z  [  \  ]  ^  _
 	};
 
 U8 asc7segs[] = {										// sub freq LUT
-	0x00, 0xA8, 0x41, 0xA8, 0xA8, 0x19, 0xA8, 0x40, 	// <spc>, !, ", #, $, %, &, ',
-	0x38, 0x2C, 0xA8, 0x58, 0xA8, 0x08, 0xA8, 0x19, 	// (, ), *, +, ,, -, ., /,
-	0xF5, 0x05, 0xB9, 0xAD, 0x4D, 0xEC, 0xFC, 0x85, 	// 0, 1, 2, 3, 4, 5, 6, 7,
-	0xFD, 0xED, 0xA8, 0xA8, 0x38, 0x28, 0x2C, 0x99, 	// 8, 9, :, ;, <, =, >, ?,
-	0xBD, 0xDD, 0x7C, 0x38, 0x3D, 0xF8, 0xD8, 0xF4,		// @, A, B, C, D, E, F, G,
-	0x5C, 0x04, 0x35, 0x58, 0x70, 0x9C, 0x1C, 0x3C, 	// H, I, J, K, L, M, N, O,
-	0xD9, 0xCD, 0x18, 0xE4, 0x78, 0x34, 0x75, 0xB4, 	// P, Q, R, S, T, U, V, W,
-	0x5D, 0x6D, 0xB1, 0xF0, 0x4C, 0xA5, 0xC1, 0x20		// X, Y, Z, [, \, ], ^, _
+	0x00, 0xA8, 0x41, 0xA8, 0xA8, 0x19, 0xA8, 0x40, 	// <spc>  !  "  #  $  %  &  '
+	0x38, 0x2C, 0xA8, 0x58, 0xA8, 0x08, 0xA8, 0x19, 	//     (  )  *  +  ,  -  .  /
+	0xF5, 0x05, 0xB9, 0xAD, 0x4D, 0xEC, 0xFC, 0x85, 	//     0  1  2  3  4  5  6  7
+	0xFD, 0xED, 0xA8, 0xA8, 0x38, 0x28, 0x2C, 0x99, 	//     8  9  :  ;  <  =  >  ?
+	0xBD, 0xDD, 0x7C, 0x38, 0x3D, 0xF8, 0xD8, 0xF4,		//     @  A  B  C  D  E  F  G
+	0x5C, 0x04, 0x35, 0x58, 0x70, 0x9C, 0x1C, 0x3C, 	//     H  I  J  K  L  M  N  O
+	0xD9, 0xCD, 0x18, 0xE4, 0x78, 0x34, 0x75, 0xB4, 	//     P  Q  R  S  T  U  V  W
+	0x5D, 0x6D, 0xB1, 0xF0, 0x4C, 0xA5, 0xC1, 0x20		//     X  Y  Z  [  \  ]  ^  _
 	};
 
 U8	asc27m(char c){

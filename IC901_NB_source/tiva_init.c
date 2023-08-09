@@ -230,7 +230,7 @@ U16 proc_init(U32 sys_clk)
 	ssi0_init();										// init SSI modules
 	init_sio(sys_clk, INIT_SIN);						// init DATA1 & DATA2 SSI modules (SSI1 & SSI3)
 	ssi2_init();										// LCD ssi init
-	timer2B_init(sys_clk);								// LCD blink timer
+	timer3B_init(sys_clk);								// LCD blink timer
 
 	// init LED PWMs (M0) on PF0 - PF3
 	SYSCTL_RCGCPWM_R |= SYSCTL_RCGCPWM_R0;
@@ -413,7 +413,7 @@ void timer2A_init(U32 sys_clk, U8 bit_start){
 	// timer2 clock domain enabled in proc_init()
 	// init Timer2A (Count dn, periodic -- inputs IC-900 async data)
 	TIMER2_CTL_R &= ~(TIMER_CTL_TAEN);					// disable timer
-	TIMER2_CFG_R = 0;
+//	TIMER2_CFG_R = 0;
 	TIMER2_TAMR_R = TIMER_TAMR_TAMR_PERIOD;
 	TIMER2_CFG_R = TIMER_CFG_16_BIT;
 	TIMER2_TAPR_R = TIMER2A_PS;
@@ -430,21 +430,21 @@ void timer2A_init(U32 sys_clk, U8 bit_start){
 //*****************************************************************************
 //	Timer2B drives the 0.25s LCB blink system
 //*****************************************************************************
-void timer2B_init(U32 sys_clk){
+void timer3B_init(U32 sys_clk){
 	volatile U32	ui32Loop;
 
-	// init timer0B for interrupts
-	SYSCTL_RCGCTIMER_R |= SYSCTL_RCGCTIMER_R2;			// enable timer 2 clock domain
+	// init timer3B for interrupts
+	SYSCTL_RCGCTIMER_R |= SYSCTL_RCGCTIMER_R3;			// enable timer 2 clock domain
 	ui32Loop = SYSCTL_RCGCGPIO_R;
-	TIMER2_CTL_R &= ~(TIMER_CTL_TBEN);					// disable timer
-	TIMER2_CFG_R = TIMER_CFG_16_BIT; //0x4; //0;
-	TIMER2_TBMR_R &= ~(TIMER_TBMR_TBMR_M);
-	TIMER2_TBMR_R |= TIMER_TBMR_TBMR_PERIOD;
-	TIMER2_TBPR_R = TIMER2B_PS;							// timer 1B prescale
-	TIMER2_TBILR_R = (uint16_t)(sys_clk/(TIMER2B_FREQ * (TIMER2B_PS + 1)));
-//	TIMER2_IMR_R |= TIMER_IMR_TBTOIM;					// enable timer intr
-	TIMER2_CTL_R |= TIMER_CTL_TBEN;						// enable timer
-	NVIC_EN0_R = NVIC_EN0_TIMER2B;						// enable timer2B intr in the NVIC_EN regs
+	TIMER3_CTL_R &= ~(TIMER_CTL_TBEN);					// disable timer
+	TIMER3_CFG_R = TIMER_CFG_16_BIT; //0x4; //0;
+	TIMER3_TBMR_R &= ~(TIMER_TBMR_TBMR_M);
+	TIMER3_TBMR_R |= TIMER_TBMR_TBMR_PERIOD;
+	TIMER3_TBPR_R = TIMER2B_PS;							// timer 1B prescale
+	TIMER3_TBILR_R = (uint16_t)(sys_clk/(TIMER2B_FREQ * (TIMER2B_PS + 1)));
+	TIMER3_IMR_R |= TIMER_IMR_TBTOIM;					// enable timer intr
+	TIMER3_CTL_R |= TIMER_CTL_TBEN;						// enable timer
+	NVIC_EN1_R = NVIC_EN1_TIMER3B;						// enable timer3B intr in the NVIC_EN regs
 }
 
 //*****************************************************************************

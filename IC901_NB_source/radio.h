@@ -147,6 +147,7 @@ struct vfo_struct {
 #define	SIN_VFOM_CF		0x00100000L					// vfo change flag
 #define	SIN_VFOS_CF		0x00200000L					// vfo change flag
 #define SIN_SINACTO_F	0x40000000L					// SIN timeout has occurred
+#define SIN_PRSNTERR_F	0x20000000L					// SIN duplicate UX present msg recedived (error)
 
 // SOUT signal flag bits
 #define SOUT_TONE_F		0x01	// tone update
@@ -210,6 +211,7 @@ U32 fetch_sin(U8 addr);
 U32 read_sin_flags(U32 flag);
 void vfo_change(U8 band);
 uint64_t* setpll(U8 bid, uint64_t* plldata, U8 is_tx, U8 is_main);
+void  set_present(U16 ii);
 U8  get_present(void);
 //U32 set_squ(U8 mainsub);
 //U32 set_vol(U8 mainsub);

@@ -251,7 +251,7 @@ void SSI2_ISR(void){
 //-----------------------------------------------------------------------------
 #define	PRESCALE2B	25					// 100hz * (100/200)(sec) = 50: number of prescale cycles in 1/2 sec
 
-void Timer2B_ISR(void){
+void Timer3B_ISR(void){
 	static	U16	ps2b;
 
 	if(ipl_t2b){
@@ -259,7 +259,7 @@ void Timer2B_ISR(void){
 		ps2b = PRESCALE2B;
 		blinky_lcd = 0;
 	}
-	if(TIMER2_MIS_R & TIMER_MIS_TBTOMIS){
+	if(TIMER3_MIS_R & TIMER_MIS_TBTOMIS){
 		if(--ps2b == 0){
 			ps2b = PRESCALE2B;
 			// brocess blink function
@@ -267,7 +267,7 @@ void Timer2B_ISR(void){
 			lcd_send(blinky_lcd & 0x01);
 		}
 	}
-	TIMER2_ICR_R = TIMERB_MIS_MASK;								// clear all 2B-intr
+	TIMER3_ICR_R = TIMERB_MIS_MASK;								// clear all 2B-intr
 	return;
 }
 

@@ -51,7 +51,7 @@ static void TIMER0BHandler(void);
 static void TIMER1AHandler(void);
 static void TIMER1BHandler(void);
 static void TIMER2AHandler(void);
-static void TIMER2BHandler(void);
+static void TIMER3BHandler(void);
 //static void TIMER4AHandler(void);
 //static void TIMER4BHandler(void);
 //static void GPIO_PL_Handler(void);
@@ -137,7 +137,7 @@ void (* const g_pfnVectors[])(void) =
 	TIMER1AHandler,                      	// 21	Timer 1 subtimer A
 	TIMER1BHandler,                      	// 22	Timer 1 subtimer B
 	TIMER2AHandler,                      	// 23	Timer 2 subtimer A
-	TIMER2BHandler,                      	// 24{	Timer 2 subtimer B
+	IntDefaultHandler,                      // 24{	Timer 2 subtimer B
     IntDefaultHandler,                      // 25	Analog Comparator 0
     IntDefaultHandler,                      // 26	Analog Comparator 1
     IntDefaultHandler,                      // 27	Analog Comparator 2
@@ -150,7 +150,7 @@ void (* const g_pfnVectors[])(void) =
     UART2Handler,		                    // 01	UART2 Rx and Tx
     IntDefaultHandler,                      // 02	SSI1 Rx and Tx
     IntDefaultHandler,                      // 03	Timer 3 subtimer A
-    IntDefaultHandler,                      // 04{	Timer 3 subtimer B
+	TIMER3BHandler,                      	// 04{	Timer 3 subtimer B
     IntDefaultHandler,                      // 05	I2C1 Master and Slave
     IntDefaultHandler,                      // 06	CAN0
     IntDefaultHandler,                      // 07	CAN1
@@ -479,13 +479,13 @@ TIMER2AHandler(void)
 
 //*****************************************************************************
 //
-// This is the code that gets called when the processor receives a TIMER2B intr.
+// This is the code that gets called when the processor receives a TIMER3B intr.
 //
 //*****************************************************************************
 static void
-TIMER2BHandler(void)
+TIMER3BHandler(void)
 {
-	Timer2B_ISR();					// process timer2B interrupt
+	Timer3B_ISR();					// process timer3B interrupt
 }
 
 //*****************************************************************************
