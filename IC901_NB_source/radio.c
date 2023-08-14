@@ -174,7 +174,7 @@ uint64_t so_initb[] = { 0x748000181F,
 						0x760010221F };
 
 #define	SO_INITB_LEN	(sizeof(so_initb)/sizeof(uint64_t))	// # elements in initb array
-#define	SO_INIT_PACE	10						// pacing value for SOUT words
+#define	SO_INIT_PACE	20						// pacing value for SOUT words
 
 // **************************************************************
 // local Fn declarations
@@ -206,11 +206,13 @@ void init_radio(void){
 	ux_present_flags = 0;								// start with no modules
 	// send init array 1 (reset)
 	send_so(SO_INITA_0);
+	wait(SO_INIT_PACE);
 	for(i=0; i<SO_INITA_LEN; i++){						// do base module reset
-		send_so(SO_INITA_1 | (so_inita[i] << 16));
+		send_so(SO_INITA_1 | ((U64)so_inita[i] << 32));
 		wait(SO_INIT_PACE);
 	}
 	send_so(SO_INITA_R91_0);
+	wait(8);											// !!! need to figure out a way to handle the 80b send case of the UX-R91 !!!
 	send_so(SO_INITA_R91_1);
 	// send init array 2 (UX module query)
 	set_wait(INITA_WAIT);

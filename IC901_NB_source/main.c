@@ -24,6 +24,7 @@
  *    				 	Needed to update several arrays for the new MAX_BAND limit which includes the new (for the IC-901) bands plus the two error bands
  *    				 Implemented update of squ/vol tapes when LCD is updated/init'd.
  *    				 Working on getting SOUT Fns updated.  SQU/VOL are coded (unit test with L/A successful).
+ *    				 !!! need to figure out a way to handle the 80b send case of the UX-R91 !!!
  *
  *    08-08-23 jmh:  Moved LCD blink timer to Timer3B to avoid conflicts with the SIN start bit alignment system
  *    08-05-23 jmh:  ASD reception now working reliably (one must fully reset the timer resource at timer events to change the timing value to the next event).
