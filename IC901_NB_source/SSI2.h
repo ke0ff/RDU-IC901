@@ -36,4 +36,4 @@ void get_seg(uint64_t* tptr, uint8_t src);
 uint8_t get_blink(void);
 
 void SSI2_ISR(void);
-void Timer2B_ISR(void);
+void Timer3B_ISR(void);

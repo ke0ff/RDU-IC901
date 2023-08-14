@@ -220,7 +220,7 @@ U16 proc_init(U32 sys_clk)
 	// init timer0A for interrupts
 	timer0A_init(sys_clk);								// init main.c ms app timer isr
 	timer0B_init(sys_clk);								// beep output/ISR
-//	timer1A_init(sys_clk);								// init serial pacing isr
+	timer1A_init(sys_clk);								// init serial pacing isr
 //	timer1B_init(sys_clk);								// KPU long baseline timer intr
 	// enable timer2 clock domain
 	SYSCTL_RCGCTIMER_R |= SYSCTL_RCGCTIMER_R2;
@@ -378,7 +378,7 @@ void timer1A_init(U32 sys_clk){
 	TIMER1_TAPR_R = TIMER1_PS;
 	TIMER1_TAILR_R = (uint16_t)(sys_clk/(TIMER1_FREQ * (TIMER1_PS + 1)));
 	TIMER1_IMR_R = TIMER_IMR_TATOIM;				// enable timer intr
-	TIMER1_CTL_R |= (TIMER_CTL_TAEN);				// enable timer
+//	TIMER1_CTL_R |= (TIMER_CTL_TAEN);				// enable timer
 	TIMER1_ICR_R = TIMER1_MIS_R;					// clear any flagged ints
 	NVIC_EN0_R = NVIC_EN0_TIMER1A;					// enable timer1A intr in the NVIC_EN regs
 }

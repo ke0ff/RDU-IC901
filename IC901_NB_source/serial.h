@@ -41,6 +41,8 @@
 #define RXD_CHAR		0x08			// rx char ready
 #define RXD_TSIPRDY		0x10			// tsip msg ready
 #define	RXD_TSIPERR		0x20			// tsip msg error
+#define	RXD_TXBOR		0x80			// txd buffer overrun
+
 #define TXD_CHRS		0x01			// tx chr sent
 #define TXD_ERR			0x10			// tx data error (buffer overflow)
 #define TXD_CERR		0x20			// tx data error (collision)

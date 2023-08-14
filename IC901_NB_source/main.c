@@ -12,9 +12,19 @@
 
 /********************************************************************
  *  Project scope rev notes:
- *    Copied from IC900_RDU application.  See that project's revnotes prior to 10-19-21 for historical rev status.
+ *    Copied from IC900_RDU application.  See that project's revnotes prior to 10-19-21 for historical rev status. N2T = "Need to Test".
  *
  *    Project scope rev History:
+ *    08-13-23 jmh:  Turned on serial pacing (Timer1A) for UART0 to reduce the CPU dwell time during serial output bursts. TX buffer is currently 100 chrs.
+ *    					putchar() places a chr in the buffer, then enables Timer1A.  Timer1A_ISR checks the UART FIFO and then pulls chrs from buffer.
+ *    					If the FIFO is still full for some reason, the ISR exits to try again on the next timer event.  If the tx buffer is empty, the
+ *    					timer ISR turns off the timer.  This simple protocol makes it easy to shove characters into the buffer and ensure that they get sent.
+ *    					It also allows for extra stop-bits to be inserted (by setting the timer interval accordingly).
+ *    				 Broke the dial up/dn for the mem/call selections - still trying to fix that... KNOOL-POST'S FIXED!!!
+ *    				 	Needed to update several arrays for the new MAX_BAND limit which includes the new (for the IC-901) bands plus the two error bands
+ *    				 Implemented update of squ/vol tapes when LCD is updated/init'd.
+ *    				 Working on getting SOUT Fns updated.  SQU/VOL are coded (unit test with L/A successful).
+ *
  *    08-08-23 jmh:  Moved LCD blink timer to Timer3B to avoid conflicts with the SIN start bit alignment system
  *    08-05-23 jmh:  ASD reception now working reliably (one must fully reset the timer resource at timer events to change the timing value to the next event).
  *    07-30-23 jmh:	 In progress: Modification work to convert 123 code to 1294 platform and also modify for the change from IC900 to IC901.
@@ -116,7 +126,7 @@
 //	M0PWM2 controls LED_RXS brightness
 //	M0PWM3 controls LCD backlight LED brightness
 //
-//	GPIO drives scan decoder (inside the main.c app timer) and scan inputs for the RDU key interface (16 keys on a 2x8 matrix,
+//	GPIO drives button scan decoder (inside the main.c app timer) and scan inputs for the RDU key interface (16 keys on a 2x8 matrix,
 //		three keys on dedicated GPIO, and two comparator inputs for up/dn). ENCup = PG0, ENCdn = PF4.
 //
 //  Interrupt Resource Map:
@@ -354,7 +364,7 @@ int main(void){
     iplt2 = 1;											// init timer1
 
 #ifdef PLLCLK
-    U16			pllstat = 0;				// pll status result
+    U16		pllstat = 0;		// pll status result
 
     pllstat = PLL_Init(sys_clk);						// init PLL
     if(pllstat != PLL_OK) sys_clk = FPIOSC;				// set error SYSCLK freq
@@ -703,7 +713,7 @@ char process_IO(U8 flag){
 //		process_CCMD(flag);
 	}
 	process_SIN(0);
-//	process_SOUT(0);
+	process_SOUT(0);
 //	process_SIN(0);
 	process_UI(0);
 //	process_CCMD(0);									// process CCMD inputs
@@ -829,11 +839,54 @@ void set_led(U8 lednum, U8 value){
 		led_1_on = 0;
 		led_2_on = 0;
 		led_3_on = 0;
+		led_0_level = LED_PWM_INIT;
+		led_1_level = LED_PWM_INIT;
+		led_2_level = LED_PWM_INIT;
+		led_3_level = LED_BL_PWM_INIT;
+		pwm_master = LED_PWM_INIT;
+		PWM0_0_CMPA_R = led_0_level;		// TX LED
+		PWM0_0_CMPB_R = led_1_level;		// RXM LED
+		PWM0_1_CMPA_R = led_2_level;		// RXS LED
+		PWM0_1_CMPB_R = led_3_level;		// BL LEDs
 		PWM0_ENABLE_R = 0;
 	}else{
 		// process led settings
 		if(value < 2){
 			switch(lednum){
+			case LED_TX_NUM:
+				if(value){
+					PWM0_ENABLE_R |= PWM_ENABLE_PWM0EN;
+				}else{
+					PWM0_ENABLE_R &= ~PWM_ENABLE_PWM0EN;
+				}
+				break;
+
+			case LED_RXM_NUM:
+				if(value){
+					PWM0_ENABLE_R |= PWM_ENABLE_PWM1EN;
+				}else{
+					PWM0_ENABLE_R &= ~PWM_ENABLE_PWM1EN;
+				}
+				break;
+
+			case LED_RXS_NUM:
+				if(value){
+					PWM0_ENABLE_R |= PWM_ENABLE_PWM2EN;
+				}else{
+					PWM0_ENABLE_R &= ~PWM_ENABLE_PWM2EN;
+				}
+				break;
+
+			case LED_BL_NUM:
+				if(value){
+					PWM0_ENABLE_R |= PWM_ENABLE_PWM3EN;
+				}else{
+					PWM0_ENABLE_R &= ~PWM_ENABLE_PWM3EN;
+				}
+				break;
+
+			}
+/*			switch(lednum){
 			case 0:							// TX LED
 				led_0_on = value;
 				if(led_0_on) PWM0_ENABLE_R |= PWM_ENABLE_PWM0EN;
@@ -857,7 +910,7 @@ void set_led(U8 lednum, U8 value){
 				if(led_0_on) PWM0_ENABLE_R |= PWM_ENABLE_PWM3EN;
 				else PWM0_ENABLE_R &= ~PWM_ENABLE_PWM3EN;
 				break;
-			}
+			}*/
 		}
 	}
 }
@@ -1542,40 +1595,36 @@ void do_3beep(void){
 //		!! need to flip-flop through a timer delay ISR to debounce !!
 //-----------------------------------------------------------------------------
 void gpiog_isr(void){
-	U8	maindial_in;
+//	U8	maindial_in;
 
-	maindial_in = GPIO_PORTG_AHB_MIS_R & ENC_UP;			// grab dial interrupt flag
-	GPIO_PORTG_AHB_ICR_R = ENC_UP;							// clear int flags
-	if(maindial_in){
-		if(maindial_in & ENC_UP){
-			main_dial += 1;									// do up
-			d_beep;											// dial beep
-		}
+//	maindial_in = GPIO_PORTG_AHB_MIS_R & ENC_UP;			// grab dial interrupt flag
+//	GPIO_PORTG_AHB_ICR_R = ENC_UP;							// clear int flags
+//	if(maindial_in){
+		main_dial += 1;										// do up
+		d_beep;												// dial beep
 		// disable gpioc
 		GPIO_PORTG_AHB_IM_R &= ~ENC_UP;						// disable edge intr
 		// set debounce timer
 		dialtimer = DIAL_DEBOUNCE;							// set debounce
 		// NOTE: debounce timer disables itself, clears gpio flags, and re-enables gpio
-	}
+//	}
 	return;
 }
 
 void gpiof_isr(void){
-	U8	maindial_in;
+//	U8	maindial_in;
 
-	maindial_in = GPIO_PORTF_AHB_MIS_R & ENC_DN;			// grab dial interrupt flag
-	GPIO_PORTF_AHB_ICR_R = ENC_DN;							// clear int flags
-	if(maindial_in){
-		if(maindial_in & ENC_DN){
-			main_dial -= 1;									// do up
-			d_beep;											// dial beep
-		}
+//	maindial_in = GPIO_PORTF_AHB_MIS_R & ENC_DN;			// grab dial interrupt flag
+//	GPIO_PORTF_AHB_ICR_R = ENC_DN;							// clear int flags
+//	if(maindial_in){
+		main_dial -= 1;										// do up
+		d_beep;												// dial beep
 		// disable gpioc
 		GPIO_PORTF_AHB_IM_R &= ~ENC_DN;						// disable edge intr
 		// set debounce timer
 		dialtimer = DIAL_DEBOUNCE;							// set debounce
 		// NOTE: debounce timer disables itself, clears gpio flags, and re-enables gpio
-	}
+//	}
 	return;
 }
 
@@ -1851,9 +1900,9 @@ static	U16	key_last;				// last key
 		}
 		if (dialtimer != 0){								// update wait timer
 			if(!(--dialtimer)){
-				GPIO_PORTF_AHB_ICR_R = ENC_DN;					// clear int flags
+				GPIO_PORTF_AHB_ICR_R = 0xff; //ENC_DN;					// clear int flags
 				GPIO_PORTF_AHB_IM_R |= ENC_DN;					// enable edge intr
-				GPIO_PORTG_AHB_ICR_R = ENC_UP;					// clear int flags
+				GPIO_PORTG_AHB_ICR_R = 0xff; //ENC_UP;					// clear int flags
 				GPIO_PORTG_AHB_IM_R |= ENC_UP;					// enable edge intr
 			}
 		}

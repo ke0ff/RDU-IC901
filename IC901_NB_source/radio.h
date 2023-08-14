@@ -75,13 +75,14 @@ struct vfo_struct {
 
 #define	MEM_NAME_LEN	16
 #define	MEM0_BASE	(LIM_END)
-					// mem structure follows this format:
-					// VFO + OFFS + DPLX + CTCSS + SQ + VOL + XIT + RIT + BID + MEM_NAME_LEN
-#define	MEM_LEN		(sizeof(U32) + sizeof(U16) + (sizeof(U8) * 7) + MEM_NAME_LEN)
+						// mem structure follows this format:
+						// VFO + OFFS + DPLX + CTCSS + SQ + VOL + XIT + RIT + BID + MEM_NAME_LEN
+#define	MEM_LEN			(sizeof(U32) + sizeof(U16) + (sizeof(U8) * 7) + MEM_NAME_LEN)
 #define	MEM_STR_ADDR	(sizeof(U32) + sizeof(U16) + (sizeof(U8) * 7))
-#define	NUM_MEMS	34							// 30 mems, + 4 call mems
 #define	MAX_MEM		30
-#define	CALL_MEM	30
+#define	MAX_MEM2	(MAX_MEM * 2)
+#define	CALL_MEM	MAX_MEM2
+#define	NUM_MEMS	(CALL_MEM + 4)			// 60 mems, + 4 call mems
 
 #define	ID10M_MEM	MEM0_BASE
 #define	ID6M_MEM	(ID10M_MEM + (NUM_MEMS * MEM_LEN))
@@ -172,6 +173,7 @@ struct vfo_struct {
 //#define	VFO_SEL	1
 #define	CRC_HIB_ADDR	62		// CRC16 goes at top 2 bytes of HIB RAM
 
+#define	SYS_ERR_WAIT	2			// is 500 for IC900 RDU
 #define	MHZ_TIME		SEC10		// MHZ digit mode timeout
 #define	VQ_TIME			SEC3		// vol/squ adj timeout
 #define	SET_TIME		(3*SEC10)	// set mode timeout

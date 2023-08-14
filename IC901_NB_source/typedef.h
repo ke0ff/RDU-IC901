@@ -26,6 +26,8 @@
 #define S16				int16_t
 #define U32				uint32_t	//unsigned long
 #define S32				int32_t		//signed long
+#define U64				uint64_t	//unsigned long-long
+#define S64				sint64_t	//signed long-long
 #define F32				float
 #define F64				double
 #define BOOL			uint8_t		//unsigned char

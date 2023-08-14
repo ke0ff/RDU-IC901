@@ -92,10 +92,11 @@ U8	ux129_rit_m;
 U8	ux129_xit_s;						// sub temp
 U8	ux129_rit_s;
 */
-struct vfo_struct vfo_p[ID1200*2];		// main and temp-copy VFOs - main are mirrored into NVRAM, temp-copies are not
-U8	mem[ID1200];						// mem# setting - an ordinal offset that maps to an ASCII character
-U8	call[ID1200];						// call-mem# setting - an ordinal offset that maps to an ASCII character
-
+struct vfo_struct vfo_p[MAX_BAND*2];	// main and temp-copy VFOs - main are mirrored into NVRAM, temp-copies are not
+U8	mem[MAX_BAND];						// mem# setting - an ordinal offset that maps to an ASCII character
+U8	call[MAX_BAND];						// call-mem# setting - an ordinal offset that maps to an ASCII character
+U8	emmnum;								// mem nums for err band
+U8	esmnum;
 // XIT/RIT only apply to one module, one per radio, so we don't need a matrix for them, just a temp.
 U8	ux129_xit;							// XIT setting (UX-129) - 4-bit signed nybble (+7/-8)
 U8	ux129_rit;							// RIT setting (UX-129) - 4-bit signed nybble (+7/-8)
@@ -117,9 +118,9 @@ U32	mhz_step;							// mhz digit add value - tracks the digit index in the thumb
 U8	mute_band;							// flags to control audio mute function for main/sub (mirror of lcd.c mute_mode)
 
 // TX upper frequency limits for each band
-U32	vfo_tulim[ID1200];
+U32	vfo_tulim[MAX_BAND];
 // TX lower frequency limits for each band
-U32	vfo_tllim[ID1200];
+U32	vfo_tllim[MAX_BAND];
 
 // upper frequency limits for each band
 U32	vfo_ulim[] = { 40000L, 60000L, 170000L, 228000L, 470000L, 1310000L };
@@ -190,6 +191,7 @@ U8 get_busy(void);
  * init_radio is called at IPL and initializes the data structures and radio hardware for the radio Fns
  */
 void init_radio(void){
+//	U8	b;				// temp band ID
 	U8	i;
 	U8	j;
 	U8	k;
@@ -255,7 +257,7 @@ void init_radio(void){
 	recall_vfo();
 	// validate VFOs to validate NVRAM contents
 	k = TRUE;
-	for(i=ID10M_IDX; i<ID1200; i++){
+	for(i=ID10M_IDX; i<IDMAX; i++){
 		if(vfo_p[i].vfo > vfo_ulim[i]) k = FALSE;		// if VFO is out of limit, invalidate the NVRAM
 		if(vfo_p[i].vfo < vfo_llim[i]) k = FALSE;
 	}
@@ -282,7 +284,7 @@ void init_radio(void){
 			vfo_p[i].vol = 20;							// vol setting
 			vfo_p[i].tsa = 1;							// tsa/b defaults
 			vfo_p[i].tsb = 2;
-			if(i<ID1200){
+			if(i<IDMAX){
 				mem[i] = 0;
 				call[i] = CALL_MEM;
 			}
@@ -307,18 +309,18 @@ void init_radio(void){
 		vfo_p[ID440_IDX].offs = 5000;
 		vfo_p[ID1200_IDX].offs = 20000;
 		// init temp vfos
-		vfo_p[ID10M_IDX+ID1200].vfo = 29100L;			// each band has a unique initial freq
-		vfo_p[ID6M_IDX+ID1200].vfo = 52525L;
-		vfo_p[ID2M_IDX+ID1200].vfo = 146520L;
-		vfo_p[ID220_IDX+ID1200].vfo = 223500L;
-		vfo_p[ID440_IDX+ID1200].vfo = 446000L;
-		vfo_p[ID1200_IDX+ID1200].vfo = 1270000L;
-		vfo_p[ID10M_IDX+ID1200].offs = 100;				// each band has a unique initial TX offset
-		vfo_p[ID6M_IDX+ID1200].offs = 1000;
-		vfo_p[ID2M_IDX+ID1200].offs = 600;
-		vfo_p[ID220_IDX+ID1200].offs = 1600;
-		vfo_p[ID440_IDX+ID1200].offs = 5000;
-		vfo_p[ID1200_IDX+ID1200].offs = 20000;
+		vfo_p[ID10M_IDX+IDMAX].vfo = 29100L;			// each band has a unique initial freq
+		vfo_p[ID6M_IDX+IDMAX].vfo = 52525L;
+		vfo_p[ID2M_IDX+IDMAX].vfo = 146520L;
+		vfo_p[ID220_IDX+IDMAX].vfo = 223500L;
+		vfo_p[ID440_IDX+IDMAX].vfo = 446000L;
+		vfo_p[ID1200_IDX+IDMAX].vfo = 1270000L;
+		vfo_p[ID10M_IDX+IDMAX].offs = 100;				// each band has a unique initial TX offset
+		vfo_p[ID6M_IDX+IDMAX].offs = 1000;
+		vfo_p[ID2M_IDX+IDMAX].offs = 600;
+		vfo_p[ID220_IDX+IDMAX].offs = 1600;
+		vfo_p[ID440_IDX+IDMAX].offs = 5000;
+		vfo_p[ID1200_IDX+IDMAX].offs = 20000;
 		ux129_xit = 0;									// X/RIT settings
 		ux129_rit = 0;
 		clear_xmode();									// init xmode to no mem/call
@@ -326,13 +328,13 @@ void init_radio(void){
 		// init mems
 		putsQ("Initializing MEMS...");					// display status msg to console
 		// copy default VFOs to memory space
-		for(bandid_m=ID10M_IDX; bandid_m<ID1200; bandid_m++){
+		for(bandid_m=ID10M_IDX; bandid_m<=IDMAX; bandid_m++){
 			for(i=0; i<NUM_MEMS; i++){
 				write_mem(MAIN, i);
 			}
 		}
-		bandid_m = BAND_ERROR;							// default to error, figure out assignment below...
-		bandid_s = BAND_ERROR;
+		bandid_m = MERR_BAND;							// default to error, figure out assignment below...
+		bandid_s = SERR_BAND;
 		ii = nvram_sn();
 		usnbuf[14] = (U8)ii;
 		usnbuf[15] = (U8)(ii >> 8);
@@ -348,16 +350,16 @@ void init_radio(void){
 	}
 	putsQ("Validate selected module...");				// display status msg to console
 	// double-check band-ids for validity against installed hardware
-	if(bandid_m != BAND_ERROR){
+	if(bandid_m >= BAND_ERROR){
 		if(!(set_bit(bandid_m) & ux_present_flags)){
-			bandid_m = BAND_ERROR;						// set main invalid if not present
+			bandid_m = MERR_BAND;						// set main invalid if not present
 			putsQ("!Merror!");							// display status msg to console
 		}
-//		bandid_s = BAND_ERROR);							// if main invalid, so is sub (will get reassigned below)
+		bandid_s = SERR_BAND;							// if main invalid, so is sub (will get reassigned below)
 	}else{
-		if(bandid_s != BAND_ERROR){
+		if(bandid_s >= BAND_ERROR){
 			if(!(set_bit(bandid_s) & ux_present_flags)){
-				bandid_s = BAND_ERROR;					// set sub invalid if not present
+				bandid_s = SERR_BAND;					// set sub invalid if not present
 				putsQ("!Serror!");						// display status msg to console
 			}
 		}
@@ -367,10 +369,10 @@ void init_radio(void){
 	i = 0;
 	do{
 		if(j&ux_present_flags){							// pick first two modules present to be main/sub
-			if(bandid_m == BAND_ERROR){					// only try to assign if error
+			if(bandid_m >= BAND_ERROR){					// only try to assign if error
 				if(i != bandid_s) bandid_m = i;			// assign if not already taken by sub-band
 			}else{
-				if(bandid_s == BAND_ERROR){				// only try to assign if error
+				if(bandid_s >= BAND_ERROR){				// only try to assign if error
 					if(i != bandid_m) bandid_s = i;		// assign if not already taken by main-band
 				}
 			}
@@ -379,10 +381,10 @@ void init_radio(void){
 		j <<= 1;
 	}while(j<=ID1200_B);
 	// if main band is error, copy up sub-band
-	if(bandid_m == BAND_ERROR){
+	if(bandid_m >= BAND_ERROR){
 		bandid_m = bandid_s;
-		if(bandid_s != BAND_ERROR){
-			bandid_s = BAND_ERROR;
+		if(bandid_s >= BAND_ERROR){
+			bandid_s = SERR_BAND;
 			putsQ("!Serror!");							// display status msg to console
 		}
 	}
@@ -391,8 +393,8 @@ void init_radio(void){
 //		bandid_s = ID440_IDX;
 //	ux_present_flags = 0x3f; //!!! force all modules on for debug
 	i = 0;
-	if(bandid_s == BAND_ERROR) i |= NO_SUX_PRSNT;
-	if(bandid_m == BAND_ERROR) i |= NO_MUX_PRSNT;
+	if(bandid_s >= BAND_ERROR) i |= NO_SUX_PRSNT;
+	if(bandid_m >= BAND_ERROR) i |= NO_MUX_PRSNT;
 	set_sys_err(i);
 
 	read_xmode();										// pull xmode from NVRAM
@@ -516,8 +518,12 @@ void  process_SIN(U8 cmd){
 		tt = get_error();
 		if(tt != lerr){
 			lerr = tt;
-			sprintf(dbuf,"ORerr = %d, free = %d", tt, get_free());
-			putsQ(dbuf);
+			if(tt){
+				GPIO_PORTB_AHB_DATA_R |= SPARE_PB1;				// !!! debug GPIO
+				sprintf(dbuf,"ORerr = %d, free = %d", tt, get_free());
+				putsQ(dbuf);
+				GPIO_PORTB_AHB_DATA_R &= ~SPARE_PB1;				// !!! debug GPIO
+			}
 		}
 //		print_ptr(); //!!!
 	}
@@ -542,6 +548,7 @@ U8 process_SOUT(U8 cmd){
 	static	U8	last_svol;
 	static	U8	last_ssqu;
 			U16 ii;
+			U16 ptti;
 			uint64_t* pptr;			// pointer into SOUT buffer
 //			char dgbuf[30];		// !!! debug sprintf/putsQ buffer
 
@@ -556,6 +563,7 @@ U8 process_SOUT(U8 cmd){
 		last_ssqu = 0xff;
 //		sout_flags = 0;
 	}else{											// normal (run) branch
+		ptti = (sin_addr2 & SIN_SEND) | (GPIO_PORTL_DATA_R & EX766_PTT);				// grab base and EX766 PTT
 		if(pll_ptr == 0xff){
 			// no data is being sent branch ...
 			j = 0;
@@ -574,8 +582,8 @@ U8 process_SOUT(U8 cmd){
 				k = 0xff;																// processing...
 			}
 			if(!j){
-				ii = sin_addr2 & SIN_SEND;
-				if(ii != ptt_mem) {														// PTT change detected
+				ii = ptti;																// either PTT will trap here
+				if(ii != ptt_mem){														// PTT change detected
 					ptt_mem = ii;														// save change
 					if(ii){
 						i = 1;															// PTT is TX
@@ -588,7 +596,7 @@ U8 process_SOUT(U8 cmd){
 						i = 0;															// PTT is RX
 					}
 					set_ptt(i);															// transfer to lcd.c
-					amtx(i^1);															// update TX LED
+					amtx(i);															// update TX LED
 					setpll(bandid_m, pll_buf, i, MAIN);									// PTT only drives MAIN band, set the module for TX
 					set_vfo_display(VMODE_ISTX | MAIN);
 					pll_ptr = 0;														// enable data send
@@ -608,7 +616,7 @@ U8 process_SOUT(U8 cmd){
 						}
 						switch(i){														// this will mechanize the various updates to process in order without collision
 						case SOUT_VFOM_N:
-							if(sin_addr2 & SIN_SEND) i = 1;								// get current state of PTT
+							if(ptti) i = 1;												// get current state of PTT
 							else i = 0;
 							pptr = setpll(bandid_m, pll_buf, i, MAIN);					// update main pll
 							pll_ptr = 0;
@@ -626,14 +634,14 @@ U8 process_SOUT(U8 cmd){
 							break;
 
 						case SOUT_MVOL_N:												// process VOL/SQU triggers...
-							if((mute_band & MS_MUTE) || (bandid_m > ID1200_IDX)){
+							if((mute_band & MS_MUTE) || (bandid_m > IDMAX_IDX)){
 								i = 0;													// 0 if muted
 							}else{
 								i = vol_m;
 							}
 							if(i != last_mvol){
 								last_mvol = i;
-								pll_buf[0] = atten_calc(i) | ATTEN_MAIN | VOL_ADDR;
+								pll_buf[0] = ((uint64_t)atten_calc(i) << LEV_SHFT) | MAINLEV_SOUT | VOL_ADDR | OPT12_SOUT;
 								pll_ptr = 0;
 								pll_buf[1] = 0xfffffffeL;									// set to confirm mute
 							}
@@ -641,14 +649,14 @@ U8 process_SOUT(U8 cmd){
 							break;
 
 						case SOUT_SVOL_N:
-							if((mute_band & SUB_MUTE) || (bandid_s > ID1200_IDX)){
+							if((mute_band & SUB_MUTE) || (bandid_s > IDMAX_IDX)){
 								i = 0;
 							}else{
 								i = vol_s;
 							}
 							if(i != last_svol){
 								last_svol = i;
-								pll_buf[0] = atten_calc(i) | ATTEN_SUB | VOL_ADDR;
+								pll_buf[0] = ((uint64_t)atten_calc(i) << LEV_SHFT) | SUBLEV_SOUT | VOL_ADDR | OPT12_SOUT;
 								pll_ptr = 0;
 								pll_buf[1] = 0xfffffffeL;								// set to confirm mute
 							}
@@ -659,9 +667,9 @@ U8 process_SOUT(U8 cmd){
 							i = vfo_p[bandid_m].sq;
 							if(i != last_msqu){
 								last_msqu = i;
-								pll_buf[0] = atten_calc(i) | ATTEN_MAIN | SQU_ADDR;
+								pll_buf[0] = ((uint64_t)atten_calc(i) << LEV_SHFT) | MAINLEV_SOUT | SQU_ADDR | OPT12_SOUT;
 								pll_ptr = 0;
-								pll_buf[1] = 0xffffffffL;
+								pll_buf[1] = 0xffffffffffffffff;
 							}
 							sout_flags &= ~SOUT_MSQU_F;									// clear signal flag
 							break;
@@ -670,9 +678,9 @@ U8 process_SOUT(U8 cmd){
 							i = vfo_p[bandid_s].sq;
 							if(i != last_ssqu){
 								last_ssqu = i;
-								pll_buf[0] = atten_calc(i) | ATTEN_SUB | SQU_ADDR;
+								pll_buf[0] = ((uint64_t)atten_calc(i) << LEV_SHFT) | SUBLEV_SOUT | SQU_ADDR | OPT12_SOUT;
 								pll_ptr = 0;
-								pll_buf[1] = 0xffffffffL;
+								pll_buf[1] = 0xffffffffffffffff;
 							}
 							sout_flags &= ~SOUT_SSQU_F;									// clear signal flag
 							break;
@@ -680,7 +688,7 @@ U8 process_SOUT(U8 cmd){
 						case SOUT_TONE_N:												// send tone message
 							pll_buf[0] = (U32)vfo_p[bandid_m].ctcss | TONE_ADDR;
 							pll_ptr = 0;
-							pll_buf[1] = 0xffffffffL;
+							pll_buf[1] = 0xffffffffffffffff;
 							sout_flags &= ~SOUT_TONE_F;									// clear signal flag
 							break;
 
@@ -753,7 +761,7 @@ void  save_vfo(U8 b_id){
 	U8	startid;
 	U8	stopid;
 
-/*	if(b_id >= ID1200){
+/*	if(b_id >= IDMAX){
 		putsQ("addr+6");
 	}*/
 	if(b_id == 0xff){
@@ -762,7 +770,7 @@ void  save_vfo(U8 b_id){
 	}else{
 		startid = b_id;
 		stopid = b_id + 1;
-		if((get_xmode(b_id) & (MC_XFLAG)) && (b_id < ID1200)){
+		if((get_xmode(b_id) & (MC_XFLAG)) && (b_id < IDMAX)){
 			// if call or mem mode, just save mem/call#:
 			j = SQ_0 + (VFO_LEN * startid);						// set start @ squ
 			rw8_nvr(j, vfo_p[startid].sq, CS_WRITE|CS_OPEN);	// save squ and vol
@@ -784,9 +792,9 @@ void  save_vfo(U8 b_id){
 		rw8_nvr(j, vfo_p[i].ctcss, k);
 		rw8_nvr(j, vfo_p[i].sq, k);
 		rw8_nvr(j, vfo_p[i].vol, k);
-		if(i >= ID1200){
-			rw8_nvr(j, mem[i-ID1200], k);
-			rw8_nvr(j, call[i-ID1200], k);
+		if(i >= IDMAX){
+			rw8_nvr(j, mem[i-IDMAX], k);
+			rw8_nvr(j, call[i-IDMAX], k);
 		}else{
 			rw8_nvr(j, mem[i], k);
 			rw8_nvr(j, call[i], k);
@@ -842,7 +850,7 @@ void  recall_vfo(void){
 		vfo_p[i].ctcss = rw8_nvr(j, 0, k);
 		vfo_p[i].sq = rw8_nvr(j, 0, k);
 		vfo_p[i].vol = rw8_nvr(j, 0, k);
-		if(i < ID1200){
+		if(i < IDMAX){
 			mem[i] = rw8_nvr(j, mem[i], k);
 			call[i] = rw8_nvr(j, 0, k);
 		}else{
@@ -2047,19 +2055,25 @@ U8 get_memnum(U8 main, U8 adder){
 
 	if(main == MAIN){
 		k = bandid_m;
+		if(k >= BAND_ERROR){
+			k = MERR_BAND;
+		}
 	}else{
 		k = bandid_s;
+		if(k >= BAND_ERROR){
+			k = SERR_BAND;
+		}
 	}
-	if(mem[k] >= MAX_MEM){
+	if(mem[k] >= MAX_MEM2){
 		mem[k] = 0;								// error fix
 	}
-	if((mem[k] < MAX_MEM) && (adder != 0)){
+	if((mem[k] < MAX_MEM2) && (adder != 0)){
 		mem[k] += adder;
 		if(mem[k] > 0x80){						// process overflow
-			mem[k] = MAX_MEM - 1;
+			mem[k] = MAX_MEM2 - 1;
 			i = 0x80;							// set end of mem list reached
 		}
-		if(mem[k] >= MAX_MEM){					// process underflow
+		if(mem[k] >= MAX_MEM2){					// process underflow
 			mem[k] = 0;
 			i = 0x80;							// set end of mem list reached
 		}
@@ -2090,15 +2104,15 @@ U8 get_callnum(U8 main, U8 adder){
 	}else{
 		k = bandid_s;
 	}
-	if(adder != 0){
-		if((call[k] < MAX_MEM) || (call[k] >= NUM_MEMS)){
+//	if(adder != 0){
+		if((call[k] < MAX_MEM2) || (call[k] >= NUM_MEMS)){
 			call[k] = CALL_MEM;
 		}else{
 			call[k] += adder;
 			if(call[k] >= NUM_MEMS) call[k] = CALL_MEM;
 			if(call[k] < CALL_MEM) call[k] = NUM_MEMS - 1;
 		}
-	}
+//	}
 	return call[k];
 }
 
@@ -2133,8 +2147,8 @@ U16 set_next_band(U8 focus){
 	U16 	k;
 	U8	h;
 
-	if((bandid_m == BAND_ERROR) || (bandid_s == BAND_ERROR)){
-		i = BAND_ERROR;										// if either bandid is error, abort (less than 2 modules present)
+	if((bandid_m >= BAND_ERROR) || (bandid_s >= BAND_ERROR)){
+		i = BAND_ERROR_F;										// if either bandid is error, abort (less than 2 modules present)
 	}else{
 		if(focus == MAIN){									// j is focused band, k is other band
 			k = set_bit(bandid_s);							// get sub-band bitmap
@@ -2163,7 +2177,7 @@ U16 set_next_band(U8 focus){
 				bandid_s = i;								// set new sub index
 			}
 		}else{
-			i = BAND_ERROR;									// 2 or less modules, no next band
+			i = BAND_ERROR_F;									// 2 or less modules, no next band
 		}
 	}
 	return i;
@@ -2176,8 +2190,8 @@ U16 set_next_band(U8 focus){
 U16 set_swap_band(void){
 	U16	i;	// temp
 
-	if((bandid_m == BAND_ERROR) || (bandid_s == BAND_ERROR)){
-		i = BAND_ERROR;										// if either bandid is error, abort (less than 2 modules present)
+	if((bandid_m >= BAND_ERROR) || (bandid_s >= BAND_ERROR)){
+		i = BAND_ERROR_F;										// if either bandid is error, abort (less than 2 modules present)
 	}else{
 		i = bandid_m;										// swap main and sub
 		bandid_m = bandid_s;
@@ -2444,10 +2458,10 @@ void copy_vfo2temp(U8 focus){
 
 	if(focus == MAIN){
 		band = bandid_m;
-		tempi = band + ID1200;
+		tempi = band + IDMAX;
 	}else{
 		band = bandid_s;
-		tempi = band + ID1200;
+		tempi = band + IDMAX;
 	}
 	ux129_xit_t = ux129_xit;
 	ux129_rit_t = ux129_rit;
@@ -2473,10 +2487,10 @@ void copy_temp2vfo(U8 focus){
 
 	if(focus == MAIN){
 		band = bandid_m;
-		tempi = band + ID1200;
+		tempi = band + IDMAX;
 	}else{
 		band = bandid_s;
-		tempi = band + ID1200;
+		tempi = band + IDMAX;
 	}
 	ux129_xit = ux129_xit_t;
 	ux129_rit = ux129_rit_t;
@@ -2596,7 +2610,7 @@ U8 get_scanen(U8 bid, U8 memnum){
 	U8	i;
 	U8	j;
 
-	if(memnum >= MAX_MEM) i = mem[bid];					// set main/sub index
+	if(memnum >= MAX_MEM2) i = mem[bid];					// set main/sub index
 	else i = memnum;
 	addr = mem_band[bid] + (i * MEM_LEN);				// calc base mem addr
 	addr += sizeof(U32) + sizeof(U16);					// point to duplex byte

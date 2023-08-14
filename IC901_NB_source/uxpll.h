@@ -15,29 +15,43 @@
 
 // PLL calculation defines
 // UX band module defines
-#define BANDOFF 0x00
-#define ID10M	0x01					// ordinal ID numbers
-#define ID6M	0x02
-#define ID2M	0x03
-#define ID220	0x04
-#define ID440	0x05
-#define ID1200	0x06
-#define IDBUNIT	0x07
-#define BAND_ERROR	0xff
-#define	NUM_VFOS	(ID1200 * 2)		// 2 for each UX band
-#define ID10M_IDX	0x00				// ordinal index values
-#define ID6M_IDX	0x01
-#define ID2M_IDX	0x02
-#define ID220_IDX	0x03
-#define ID440_IDX	0x04
-#define ID1200_IDX	0x05
+#define BANDOFF		0x00				// base reset address
+// ordinal ID numbers
+#define ID10M		0x01				// UX-29
+#define ID6M		0x02				// UX-59
+//#define ID2M		0x03
+#define ID220		0x04				// UX-39
+//#define IDUX440		0x05				// UX-49 (not available to IC901)
+#define ID1200		0x06				// UX-129
+#define ID2M		0x07				// IC901 2m
+#define ID440		0x08				// IC901 UHF
+#define ID2MSSB		0x0A				// S92 2m SSB
+#define IDWBRX		0x0C				// R91 WBRX
+#define ID2MSSBD	0x0A				// 2mSSB "dials"
+#define IDBUNIT		0x0E				// vol/squ/tone
+#define	IDPAGE		0x0F				// paging
+#define IDMAX		0x06				// max number of radio modules
 
-#define ID10M_B		0x01				// bitmapped ID numbers
-#define ID6M_B		0x02
-#define ID2M_B		0x04
-#define ID220_B		0x08
-#define ID440_B		0x10
-#define ID1200_B	0x20
+#define	MAX_BAND		(IDWBRX + 2)	// top index points to "band-err" locations
+#define	MERR_BAND		(MAX_BAND-1)
+#define	SERR_BAND		(MAX_BAND)
+#define BAND_ERROR		(MERR_BAND)
+#define BAND_ERROR_F	(0xff)
+#define	NUM_VFOS		(IDWBRX * 2)	// 2 for each UX band
+#define ID10M_IDX		0x00			// ordinal index values
+#define ID6M_IDX		0x01
+#define ID2M_IDX		0x02
+#define ID220_IDX		0x03
+#define ID440_IDX		0x04
+#define ID1200_IDX		0x05
+#define IDMAX_IDX		0x05
+
+#define ID10M_B			0x01			// bitmapped ID numbers
+#define ID6M_B			0x02
+#define ID2M_B			0x04
+#define ID220_B			0x08
+#define ID440_B			0x10
+#define ID1200_B		0x20
 
 #define IDALL_B		(ID10M_B | ID6M_B | ID2M_B | ID220_B | ID440_B | ID1200_B)
 
@@ -100,26 +114,30 @@
 #define BND_SHIFT		0
 
 // SOUT defines
-#define	ADDR_SOUT		0x38000000					// mask for addr bits
-#define	OPT12_SOUT		0x04000000					// Selects OPT1 = main, 2 = sub if "1", else OPT1 = sub, 2 = main
-#define	VOL_SOUT		0x02000000					// if "1", vol level
-#define	SQU_SOUT		0x01000000					// if "1", SQU level
-#define	TONE_SOUT		0x00800000					// if "1", tone code
-#define	DSQL_SOUT		0x00400000					// if "1", DSQ ?
-#define	XFR12_SOUT		0x00200000					// "1" = OPT1 is serial xfr dest, else OPT2
-#define	OPT_DEFLT		(OPT12_SOUT|XFR12_SOUT)		// default OPT state
+#define	ADDR_VQT		0x700000001F				// vol, squ, tone addr
+#define	OPT12_SOUT		0x0400000000				// Selects OPT1 = main, 2 = sub if "1", else OPT1 = sub, 2 = main
+#define	VOL_SOUT		0x0200000000				// if "1", vol level
+#define	SQU_SOUT		0x0100000000				// if "1", SQU level
+#define	TONE_SOUT		0x0080000000				// if "1", tone code
+#define	XFR12_SOUT		0x0040000000				// "1" = OPT1 is serial xfr dest, else OPT2
+#define	AFM1_SOUT		0x0020000000				// AFM main
+#define	AFM2_SOUT		0x0010000000				// AFM sub
+#define	RPTXB_SOUT		0x0008000000				// xband rpt
+#define	MAINLEV_SOUT	0x0000000200				// main level \___ can't be "11"
+#define	SUBLEV_SOUT		0x0000000100				// sub level  /
 
 #define	ATTEN_FINE_LIM		5
-#define	ATTEN_FINE			0x000400
+#define	ATTEN_FINE			0x000010
 #define	ATTEN_COARSE_LIM	7
-#define	ATTEN_COARSE		0x020000
+#define	ATTEN_COARSE		0x000800
+#define	LEV_SHFT		11							// #bits to left shift ATTEN data to align
 #define	LEVEL_MAX 		((ATTEN_FINE_LIM * ATTEN_COARSE_LIM) - 1)
 #define	ATTEN_MAIN		0x00000010					// main select
 #define	ATTEN_SUB		0x00000008					// sub select
 
-#define	VOL_ADDR		(ADDR_SOUT|VOL_SOUT)		// sout addr for vol
-#define	SQU_ADDR		(ADDR_SOUT|SQU_SOUT)		// sout addr for squ
-#define	TONE_ADDR		(ADDR_SOUT|TONE_SOUT)		// sout addr for tone enc
+#define	VOL_ADDR		(ADDR_VQT|VOL_SOUT)			// sout addr for vol
+#define	SQU_ADDR		(ADDR_VQT|SQU_SOUT)			// sout addr for squ
+#define	TONE_ADDR		(ADDR_VQT|TONE_SOUT)		// sout addr for tone enc
 
 ///////////////////////////////////////////////////////////////////////////////
 //-----------------------------------------------------------------------------

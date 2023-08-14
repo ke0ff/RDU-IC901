@@ -28,7 +28,6 @@
 #include "serial.h"
 #include "sio.h"
 #include "ssi2.h"
-//#include "kpu.h"
 
 //*****************************************************************************
 //
@@ -281,11 +280,11 @@ NmiSR(void)
 static void
 FaultISR(void)
 {
-//	uint32_t	i;
+	uint32_t	i = 1;
     //
     // Enter an infinite loop.
     //
-    while(1)
+    while(i)
     {
     }
 }

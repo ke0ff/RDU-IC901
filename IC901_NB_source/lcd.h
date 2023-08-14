@@ -381,6 +381,8 @@ void msmet(U8 srf, U8 blink);
 void ssmet(U8 srf, U8 blink);
 void squtape(U8 squ, U8 blink);
 void voltape(U8 vol, U8 blink);
+void squicon(U8 tf, U8 blink);
+void volicon(U8 tf, U8 blink);
 U8 mputs_lcd(char *s, U8 dp_tf);
 U8 sputs_lcd(char *s, U8 dp_tf);
 void mmem(U8 mn);

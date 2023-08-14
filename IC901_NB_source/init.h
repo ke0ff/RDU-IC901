@@ -68,7 +68,7 @@
 #define TIMERA_MIS_MASK	TIMER_MIS_AMASK
 #define TIMERB_MIS_MASK	TIMER_MIS_BMASK
 
-#define	DIAL_DEBOUNCE	10			// 10 ms dial debounce
+#define	DIAL_DEBOUNCE	100			// 20 ms dial debounce
 
 // ***********************
 // GPIO PORT BITMAPS
@@ -140,7 +140,7 @@
 #define	PORTL_INIT	(0)
 #define PORTL_DEN	(SPARE_PL7|SPARE_PL6|EX766_PTT|BEEP|C1O|C0O|LCD_RSTN|NU_PL0)
 #define PORTL_DIR	(BEEP|C1O|C0O|LCD_RSTN)
-#define PORTL_PUR	(SPARE_PL7|SPARE_PL6|EX766_PTT|NU_PL0)
+#define PORTL_PUR	(SPARE_PL7|SPARE_PL6|NU_PL0)
 // IC-900 SM defines the beep frequency as 1/525us = 1905 Hz.  However, tests indicate that 3375 Hz
 //	has a greater resonance and thus sounds much louder.
 #define	BEEP_DURATION	75L								// #ms for beep
@@ -228,6 +228,14 @@
 #define PORTF_DEN	(ENC_DN|DIMMER|LED_RXS|LED_RXM|LED_TX)
 #define PORTF_DIR	(DIMMER|LED_RXS|LED_RXM|LED_TX)
 #define PORTF_PUR	0
+
+// set_led() defines
+#define	LED_TX_NUM		0
+#define	LED_RXM_NUM		1
+#define	LED_RXS_NUM		2
+#define	LED_BL_NUM		3
+#define	LED_PWM_INIT	99
+#define	LED_BL_PWM_INIT	30
 
 // PORTE
 #define PORTE SYSCTL_RCGCGPIO_R4
@@ -383,8 +391,8 @@
 #define	SIN_START_BIT_TIME	(SIN_BIT_TIME/2)					// 1/2 bit time delay to align SSI clock with mid-point of sin async data stream
 #define	SIN_EOT_TIME		(18*SIN_BIT_TIME)					// 1 sin word time + 2 stop bits
 // timer definitions
-#define TIMER1_PS 31				// prescale value for timer1
-#define	TIMER1_FREQ	9600			// timer1 intr freq
+#define TIMER1_PS 31											// prescale value for timer1
+#define	TIMER1_FREQ			(115200/11)							// timer1 intr freq, 11 bits at 115200 baud
 //#define TIMER3_ILR 0xffff			// timer 3 interval (24 bit)
 //#define TIMER3_PS 0xff
 //#define TIMER1_PS 32

@@ -54,14 +54,17 @@ U8  bteol;						// BT eol detected
 U8  TI0B;						// UART0 TI0 reflection (set by interrupt)
 #define RXD0_BUFF_END 80		// CCMD rx buff len
 #define RXD1_BUFF_END 80		// CLI rx buff len
-#define TXD_BUFF_END 100			// tx buffs
-#define TXD1_BUFF_END 100		// tx1 buff
+#define TXD0_BUFF_END 100		// tx buffs
+#define TXD1_BUFF_END 100
 
 S8   volatile rxd_buff[RXD0_BUFF_END];	// rx data buffer
 U8   volatile rxd_hptr;					// rx buf head ptr
 U8   volatile rxd_tptr;					// rx buf tail ptr
 U8   volatile rxd_stat;					// rx buff status
 U8	 volatile rxd_mcnt;					// msg (EOL) count
+S8   volatile txd_buff[TXD0_BUFF_END];	// rx data buffer
+U8   volatile txd_hptr;					// rx buf head ptr
+U8   volatile txd_tptr;					// rx buf tail ptr
 
 // UART1 (CCMD I/O, RS485)
 U8   volatile rxd1_buff[RXD1_BUFF_END];	// rx1 data buffer
@@ -98,6 +101,8 @@ void initserial(void){
     rxd1_tptr = 0;
     rxd1_stat = 0;
     rxd_mcnt = 0;
+    txd_hptr = 0;
+    txd_tptr = 0;
     init_uart0(115200L);
 //	process_xrx(RX_STATE_INIT);
 	xmode = FALSE;
@@ -609,7 +614,37 @@ char set_baud0(U32 baud){
 //-----------------------------------------------------------------------------
 char putchar0(char c){
 
-	// output cr if c = \n		// no xmodem
+	if(c == '\n'){									// if newline,
+		txd_buff[txd_hptr++] = '\r';				// place <CR> into buffer
+		if(txd_hptr == TXD0_BUFF_END){				// roll over the head
+			txd_hptr = 0;
+		}
+		if(txd_hptr == txd_tptr){
+			// discard old data
+			txd_tptr += 1;
+			if(txd_tptr == TXD0_BUFF_END){			// roll over the tail
+				txd_tptr = 0;
+			}
+			rxd_stat = RXD_TXBOR;					// if tail == head, signal error
+		}
+	}
+	txd_buff[txd_hptr++] = c;						// place chr into buffer
+	if(txd_hptr == TXD0_BUFF_END){					// roll over the head
+		txd_hptr = 0;
+	}
+	if(txd_hptr == txd_tptr){
+		// discard old data
+		txd_tptr += 1;
+		if(txd_tptr == TXD0_BUFF_END){				// roll over the tail
+			txd_tptr = 0;
+		}
+		rxd_stat = RXD_TXBOR;					// if tail == head, signal error
+	}
+//	TIMER1_ICR_R = TIMER1_MIS_R & TIMERA_MIS_MASK;	// pre-clear timer flag
+	TIMER1_CTL_R |= (TIMER_CTL_TAEN);				// enable timer
+
+
+/*	// output cr if c = \n		// no xmodem
 	if(c == '\n'){
 	    wait_reg0(&UART0_FR_R, UART_FR_TXFF, CHR_WAT0);	// wait up for fifo to clear
 //		while((UART0_FR_R & 0x0020) == 0x0020);
@@ -618,7 +653,7 @@ char putchar0(char c){
 	// output character
     wait_reg0(&UART0_FR_R, UART_FR_TXFF, CHR_WAT0);	// wait up for fifo to clear
 //	while((UART0_FR_R & 0x0020) == 0x0020);
-	UART0_DR_R = c;
+	UART0_DR_R = c;*/
 	return (c);
 }
 
@@ -629,10 +664,12 @@ char putchar0(char c){
 //-----------------------------------------------------------------------------
 char putchar_b0(char c){
 
-	// output character
+	putchar0(c);
+
+/*	// output character
     wait_reg0(&UART0_FR_R, UART_FR_TXFF, CHR_WAT0);	// wait up for fifo to clear
 //	while((UART0_FR_R & 0x0020) == 0x0020);
-	UART0_DR_R = c;
+	UART0_DR_R = c;*/
 	return c;
 }
 
@@ -1191,11 +1228,15 @@ void rxd1_intr(void){
 void Timer1A_ISR(void)
 {
 
-//    GPIO_PORTD_DATA_R ^= SPARE4;
-
-/*	if(TIMER1_MIS_R & TIMER_MIS_TATOMIS){
-		txd1_rdy = 1;
-	}*/
+	if(!(UART0_FR_R & UART_FR_TXFF)){					// if fifo full, skip until next chr slot
+		UART0_DR_R = txd_buff[txd_tptr++];				// output chr from buffer
+		if(txd_tptr == TXD0_BUFF_END){					// roll over the tail
+			txd_tptr = 0;
+		}
+	}
+	if(txd_hptr == txd_tptr){
+		TIMER1_CTL_R &= ~(TIMER_CTL_TAEN);				// disable timer
+	}
 	TIMER1_ICR_R = TIMER1_MIS_R & TIMERA_MIS_MASK;
     return;
 }
