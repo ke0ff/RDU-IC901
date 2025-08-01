@@ -9,6 +9,7 @@
  *  CLI Command Interpreter
  *  
  *******************************************************************/
+#define DEBUG
 
 #include <string.h>
 #include <stdio.h>
@@ -63,11 +64,11 @@ enum err_enum{ no_response, no_device, target_timeout };
 //	with the last entry, 0xff)
 //                                                           1  1     1     1   1   1  1   1     1    1     2   2  2  2  2
 //                        0   1  2  3   4   5  6  7  8  9    0  1     2     3   4   5  6   7     8    9     0   1  2  3  4
-const char cmd_list[] = {"BT\0B\0H\0K\0AT\0AS\0A\0D\0LCD\0L\0P\0E\0F\0INFO\0MSTR\0NR\0NW\0NC\0U\0SCAN\0STO\0TA\0TI\0T\0?\0H\0VERS\0\xff"};
+const char cmd_list[] = {"BT\0B\0H\0K\0AT\0AS\0A\0D\0LCD\0L\0P\0E\0F\0INFO\0MSTR\0NR\0NW\0NC\0U\0SCAN\0STO\0TA\0TI\0T\0?\0H\0VERS\0VFOI\0\xff"};
 //             0      1      2       3       4       5       6      7       8        9       10      11      12       13   14   15   16    17       18       19
 enum cmd_enum{ bttest,beeper,hm_data,kp_data,tst_att,tst_asc,adc_tst,dis_la,lcd_tcmd,list_la,tst_pwm,tst_enc,tst_freq,info,mstr,nvrd,nvwr,nvcmd,tstuart1,scan_cmd,sto_mem,
 //             20       21        22      23    24
-			   tape_tst,timer_tst,trig_la,help1,help2,vers,lastcmd,helpcmd };
+			   tape_tst,timer_tst,trig_la,help1,help2,vers,vfoinit,lastcmd,helpcmd };
 
 #define	cmd_type	char	// define as char for list < 255, else define as int
 
@@ -227,12 +228,14 @@ int x_cmdfn(U8 nargs, char* args[ARG_MAX], U16* offset){
 	float	fa;
 	char	gp_buf[20];				// gen-purpose buffer
 
-#ifdef DEBUG
-	U8		m;						// temp
+#ifdef DEBUGL
+	U8		m8;						// temp
 	U8		dbuf[10];				// U8 disp buf
+#endif
+#ifdef DEBUG
 	S8		si;						// temp s
 	S8		sj;
-	float	fb;
+//	float	fb;
 #endif
 
 	bchar = '\0';																// clear global escape
@@ -327,6 +330,11 @@ int x_cmdfn(U8 nargs, char* args[ARG_MAX], U16* offset){
 					// no break here...
 				case vers:														// SW VERSION CMD
 					dispSWvers(obuf);
+					break;
+
+				case vfoinit:
+					init_vfos(1);
+					putsQ("Init VFOS");
 					break;
 
 				case tape_tst:
@@ -523,7 +531,7 @@ int x_cmdfn(U8 nargs, char* args[ARG_MAX], U16* offset){
 							ii = ((uint32_t)params[0] << 16)|(uint32_t)params[1];
 							sprintf(obuf,"SO data: %08x",ii);
 							putsQ(obuf);
-							send_so(ii);
+							send_so(ii, 0);
 							i = 30;
 							do{
 								ii = get_sin();
@@ -997,8 +1005,8 @@ int x_cmdfn(U8 nargs, char* args[ARG_MAX], U16* offset){
 							putsQ(obuf);
 						}
 					}else{
-#ifdef DEBUG
-						// if "C", display milti-line (until ESC)
+#ifdef DEBUGL
+						// if "C", display multi-line (until ESC)
 						do{														// display ascii version of msg
 							ip = adc_buf;
 							i = adc_in(ip);
@@ -1150,12 +1158,12 @@ int x_cmdfn(U8 nargs, char* args[ARG_MAX], U16* offset){
 					break;
 #define	deelay	5
 				case trig_la:												// LCD debug trigger
-#ifdef DEBUG
+#ifdef DEBUGL
 					putsQ("LCD CMD line (ESC to exit)...\n");
 					bchar = 0;
 					l = 0x41;
 					j = 0xe0;
-					m = 1;
+					m8 = 1;
 					do{
 						switch(bchar){
 						default:
@@ -1326,9 +1334,9 @@ int x_cmdfn(U8 nargs, char* args[ARG_MAX], U16* offset){
 
 						case 's':
 							putsQ("msmet.\n");
-							ssmet(m, 0);
-							msmet(m++, 0);
-							if(m > 7) m = 0;
+							ssmet(m8, 0);
+							msmet(m8++, 0);
+							if(m8 > 7) m8 = 0;
 							if(bchar != ESC) bchar = 0;
 							break;
 						}
@@ -2123,7 +2131,7 @@ void disp_lcd(uint8_t* lptr){
 	uint32_t	i;
 
 	for(i=0; i<LCD_MSG_LEN; i++){
-		puthex0(*lptr++);
+		puthexQ(*lptr++);
 	}
 	return;
 }

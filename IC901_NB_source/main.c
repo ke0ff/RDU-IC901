@@ -15,6 +15,24 @@
  *    Copied from IC900_RDU application.  See that project's revnotes prior to 10-19-21 for historical rev status. N2T = "Need to Test".
  *
  *    Project scope rev History:
+ *    07-29-25 jmh:  Slowly working out kinks from IC900F version.  Got 2m-base unit tx/rx working  Lots of bit alignment issues that needed (and
+ *    					still likely need) working out.  For example, UT-48 is sending tones on TX, but nothing is in place to command that other
+ *    					than the default init stream that is in place (likely the default data that is the cause).
+ *
+ *						Got U/D buttons working.  lcd.c is clearing change flags, so no one outside that focus can depend on them.
+ *						Many things seem to be working.  SQU/VOL, s-meter, T/R leds, hi/low power.
+ *						Some things not... VFOs are getting trashed.  Need to align vfo to 5KHz when band is made active.  Need to figure out why
+ *							-- may be force_push_radio()???  Right now, just one VFO seems to be affected (ometimes main, others sub).  command-line
+ *							"vfoi" command is the bandaid, it re-inits the radio space.  Use until a fix is found.
+ *						VFOs are getting trashed (maybe pll buffer management is not entirely right... added 6 more slots to buffer space)
+ *							-- good idea but didn't fix VFO trashing.
+ *						Main SQU not updating when mems are changed.  Seems to be an init problem, it works after executing a manual mem write
+ *							with squelch tight.
+ *
+ *    08-14-23 jmh:  The 80b send case of the UX-R91: modified send_so() to have an r91a flag which determines if there is a start bit (r91a == 0) or
+ *    				 	if the data word is the 2nd half of the R91A data stream.  send_so() now just does a hard-wait for the SSI FIFO to empty before
+ *    				 	planing any more data into the FIFO.  This could potentially hold up the process chain by a little over 3 ms (2x bytes at 4800 baud).
+ *
  *    08-13-23 jmh:  Turned on serial pacing (Timer1A) for UART0 to reduce the CPU dwell time during serial output bursts. TX buffer is currently 100 chrs.
  *    					putchar() places a chr in the buffer, then enables Timer1A.  Timer1A_ISR checks the UART FIFO and then pulls chrs from buffer.
  *    					If the FIFO is still full for some reason, the ISR exits to try again on the next timer event.  If the tx buffer is empty, the
@@ -24,13 +42,11 @@
  *    				 	Needed to update several arrays for the new MAX_BAND limit which includes the new (for the IC-901) bands plus the two error bands
  *    				 Implemented update of squ/vol tapes when LCD is updated/init'd.
  *    				 Working on getting SOUT Fns updated.  SQU/VOL are coded (unit test with L/A successful).
- *    				 !!! need to figure out a way to handle the 80b send case of the UX-R91 !!!
- *
  *    08-08-23 jmh:  Moved LCD blink timer to Timer3B to avoid conflicts with the SIN start bit alignment system
  *    08-05-23 jmh:  ASD reception now working reliably (one must fully reset the timer resource at timer events to change the timing value to the next event).
  *    07-30-23 jmh:	 In progress: Modification work to convert 123 code to 1294 platform and also modify for the change from IC900 to IC901.
  *    03-23-22		 * 1st-compile complete with CLI functioning.
- *    				 * NVRAM port complete and working.  Re-tested after replacing Tiva processor due to damage during probing.
+ *    				 * NVRAM port complete and working.  07/2023: Re-tested after replacing Tiva processor due to damage during probing.
  *    				 * PWM port complete - tested, PWMs working.
  *    				 * ENC u/d port complete - NTBT.
  *    				 * base-band keypad port complete - tested.  Added MU_D2 comparator buttons.
@@ -290,7 +306,7 @@ uint64_t biglcd[] = { (((uint64_t)(LCD_CE1))<<56) | 0x00000000000014,
 					  (((uint64_t)(LCD_CE2))<<56) | 0xFFE3B087B3D7D4,
 					  (((uint64_t)(LCD_CE2))<<56) | 0x4F57F4CED1F801
 };
-uint64_t blanklcd[] = { (((uint64_t)(LCD_CE1))<<56) | 0x00000000000004,
+uint64_t blanklcd[] = {(((uint64_t)(LCD_CE1))<<56) | 0x00000000000004,
 		               (((uint64_t)(LCD_CE1))<<56) | 0x00000000000001,
 					   (((uint64_t)(LCD_CE2))<<56) | 0x00000000000004,
 					   (((uint64_t)(LCD_CE2))<<56) | 0x00000000000001
@@ -427,7 +443,7 @@ int main(void){
     lcd_send(lcd_tests4, 1);*/
 
 /*	for(i=0; i<8; i++){
-		send_so((uint64_t)0xa98765432e);
+		send_so((uint64_t)0xa98765432e, 0);
 		wait(100);
 		wait(2);
 	}*/
@@ -438,7 +454,7 @@ int main(void){
     	rebufN[2] = rebuf2;
     	rebufN[3] = rebuf3;
     	while(iplt2);									// wait for timer to finish intialization
-    	wait(200);										// else, pad a bit of delay for POR to settle..
+    	wait(50);										// else, pad a bit of delay for POR to settle..
     	dispSWvers(buf); 								// display reset banner
     	wait(10);										// a bit of delay..
     	rebuf0[0] = '\0';								// clear cmd re-do buffers

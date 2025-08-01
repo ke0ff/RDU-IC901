@@ -37,17 +37,36 @@ struct vfo_struct {
 	U8	ctcss;						// PL setting and "OFF" control bit
 	U8	sq;							// SQ setting
 	U8	vol;						// VOL setting
+	U8	mem;						// current mem#
+	U8	call;						// current call#
 	U8	bflags;						// expansion flags
 	U8	scanflags;					// scan flags (expansion)
 	U8	tsa;						// frq step "A" setting
 	U8	tsb;						// frq step "B" setting
 };
 
+////////////////////////////////////////////////////////////////////////////////////////////////
 // NVRAM memory map
 #define	NVRAM_BASE	(0L)
+// Global data resides in the first 128 bytes of NVRAM
+#define	XIT_0		(NVRAM_BASE)							// xit reg
+#define	RIT_0		(XIT_0 + sizeof(U8))					// rit reg
+#define	BIDM_0		(RIT_0 + sizeof(U16))					// bandidm reg
+#define	BIDS_0		(BIDM_0 + sizeof(U16))					// bandids reg
+
+#define	XMODET_0	(BIDS_0 + sizeof(U8))					// xmode flags, one per domain
+
+#define	TXULIM_0	(XMODET_0 + ((sizeof(U8) * ID2MSSB)))	// TX upper limits (per band domain)
+#define	TXLLIM_0	(TXULIM_0 + ((sizeof(U32) * ID2MSSB)))	// TX lower limits (per band domain)
+
+#define	LIM_END		(TXLLIM_0 + ((sizeof(U32) * ID2MSSB)))	// reserved space
+
+#define	RESERVED0	(128 - LIM_END)							// reserved segment
+
 // Each VFO is stored to NVRAM as a "union" with individual elements of disparate arrays
-// grouped together to reduce SPI transfer overhead.
-#define	VFO_0		(NVRAM_BASE)				// main vfo freq
+// grouped together to reduce SPI transfer overhead.  This allows all elements of a VFO to
+// be updated by a single SPI transfer
+#define	VFO_0		(LIM_END + RESERVED0)		// main vfo freq
 #define	OFFS_0		(VFO_0 + (sizeof(U32)))		// TX offset freq
 #define	DPLX_0		(OFFS_0 + (sizeof(U16)))	// duplex/RFpwr/XIT/MEM
 #define	CTCSS_0		(DPLX_0 + sizeof(U8))		// PL setting
@@ -59,39 +78,48 @@ struct vfo_struct {
 #define	SCANFLAGS_0	(BFLAGS_0 + sizeof(U8))		// scan (expansion) flags
 #define	TSA_0		(SCANFLAGS_0 + sizeof(U8))	// frq step "A"
 #define	TSB_0		(TSA_0 + sizeof(U8))		// frq step "B"
-
 #define	VFO_LEN		((TSB_0 + sizeof(U8)) - VFO_0)
-#define	XIT_0		((VFO_LEN * NUM_VFOS) + VFO_0) // xit reg
-#define	RIT_0		(XIT_0 + sizeof(U8))		// rit reg
-#define	BIDM_0		(RIT_0 + sizeof(U8))		// bandidm reg
-#define	BIDS_0		(BIDM_0 + sizeof(U8))		// bandids reg
-#define	VFO_END		(BIDS_0 + sizeof(U8))		// start of next segment
 
-#define	XMODET_0	VFO_END						// xmode flags
+#define	IDX_VFO		0							// Byte address offsets for NVRAM addressing
+#define	IDX_OFFS	OFFS_0 - VFO_0
+#define	IDX_DPLX	DPLX_0 - VFO_0
+#define	IDX_CTCSS	CTCSS_0 - VFO_0
+#define	IDX_SQ		SQ_0 - VFO_0
+#define	IDX_VOL		VOL_0 - VFO_0
+#define	IDX_MEM		MEM_0 - VFO_0
+#define	IDX_CALL	CALL_0 - VFO_0
+#define	IDX_BFLAGS	BFLAGS_0 - VFO_0
+#define	IDX_SCANFLAGS SCANFLAGS_0 - VFO_0
+#define	IDX_TSA		TSA_0 - VFO_0
+#define	IDX_TSB		TSB_0 - VFO_0
 
-#define	TXULIM_0	(XMODET_0 + ((sizeof(U8) * ID1200)))	// TX upper limits (per band)
-#define	TXLLIM_0	(TXULIM_0 + ((sizeof(U32) * ID1200)))	// TX lower limits (per band)
-#define	LIM_END		(TXLLIM_0 + ((sizeof(U32) * ID1200)))	// start of next segment
+#define	VFO_END		((VFO_LEN * NUM_VFOS) + VFO_0)
 
+// MEM space //
 #define	MEM_NAME_LEN	16
-#define	MEM0_BASE	(LIM_END)
-						// mem structure follows this format:
-						// VFO + OFFS + DPLX + CTCSS + SQ + VOL + XIT + RIT + BID + MEM_NAME_LEN
-#define	MEM_LEN			(sizeof(U32) + sizeof(U16) + (sizeof(U8) * 7) + MEM_NAME_LEN)
+#define	MEM0_BASE	(VFO_END)
+
+// mem structure follows this format:
+// [VFO + OFFS + DPLX + CTCSS + SQ + VOL] + [XIT + RIT + BID] + MEM_NAME_LEN
+#define	MEM_LEN			(VFO_LEN + (sizeof(U8) * 3) + MEM_NAME_LEN)
 #define	MEM_STR_ADDR	(sizeof(U32) + sizeof(U16) + (sizeof(U8) * 7))
 #define	MAX_MEM		30
-#define	MAX_MEM2	(MAX_MEM * 2)
+#define	MAX_MEM2	(MAX_MEM * 2)			// double the IC900 mem space
 #define	CALL_MEM	MAX_MEM2
 #define	NUM_MEMS	(CALL_MEM + 4)			// 60 mems, + 4 call mems
 
+// Each mem consists of a mem name string (ASCII), the VFO struct, and XIT/BID metas
 #define	ID10M_MEM	MEM0_BASE
 #define	ID6M_MEM	(ID10M_MEM + (NUM_MEMS * MEM_LEN))
 #define	ID2M_MEM	(ID6M_MEM + (NUM_MEMS * MEM_LEN))
 #define	ID220_MEM	(ID2M_MEM + (NUM_MEMS * MEM_LEN))
 #define	ID440_MEM	(ID220_MEM + (NUM_MEMS * MEM_LEN))
 #define	ID1200_MEM	(ID440_MEM + (NUM_MEMS * MEM_LEN))
-#define	MEM_END		(ID1200_MEM + (NUM_MEMS * MEM_LEN))
+#define	IDR91_MEM	(ID1200_MEM + (NUM_MEMS * MEM_LEN))
+#define	IDS92_MEM	(IDR91_MEM + (NUM_MEMS * MEM_LEN))
+#define	MEM_END		(IDS92_MEM + (NUM_MEMS * MEM_LEN))
 
+//////////////////////////////////////////////////////////////
 // CTCSS flags
 #define	CTCSS_MASK		0x3F				// tone code mask
 #define	TONE_MAX		38					// max # PL tones
@@ -123,7 +151,7 @@ struct vfo_struct {
 #define	NO_PTT			0
 #define	PTT_KEYED		1
 #define	PTT_EDGE		0x80
-
+/*
 // SIN activity flag bits
 #define SIN_SQSM_F		SIN_SQSA					// COS main
 #define SIN_SQSM_CF		SIN_SQSA_CF					// COS main
@@ -149,8 +177,10 @@ struct vfo_struct {
 #define	SIN_VFOS_CF		0x00200000L					// vfo change flag
 #define SIN_SINACTO_F	0x40000000L					// SIN timeout has occurred
 #define SIN_PRSNTERR_F	0x20000000L					// SIN duplicate UX present msg recedived (error)
-
+*/
 // SOUT signal flag bits
+#define	PLL_EOL			0xff00000000000000LL
+
 #define SOUT_TONE_F		0x01	// tone update
 #define SOUT_TONE_N		0x00	// tone ordinal
 #define SOUT_MSQU_F		0x02	// main squ update SIN_VFOM_F
@@ -204,6 +234,8 @@ void init_radio(void);
 void process_SIN(U8 cmd);
 U8 process_SOUT(U8 cmd);
 void  save_vfo(U8 b_id);
+//void  save_v(U8 focus);
+//void  save_q(U8 focus);
 void  recall_vfo(void);
 //U16 crc_vfo(void);
 U16 crc_hib(void);
@@ -238,10 +270,10 @@ U32 get_freq(U8 focust);
 void copy_vfot(U8 main);
 void temp_vfo(U8 main);
 U32 get_vfot(void);
-void  force_push_radio(void);
+void  force_push_radio(U8 flag);
 U8 get_lohi(U8 bid, U8 setread);
 U8 get_memnum(U8 main, U8 adder);
-U8 get_callnum(U8 main, U8 adder);
+U8 get_callnum(U8 main, S8 adder);
 U8 get_bit(U16 value);
 U8 set_bit(U16 value);
 U8 bit_set(U16 value);
@@ -269,4 +301,5 @@ U8 get_scanmem(U8 focus);
 U8 get_scanen(U8 bid, U8 memnum);
 U8 togg_scanmem(U8 focus);
 U32 get_memaddr(U8 band, U8 memnum);
-void set_memnum(U8 bid, U8 memnum);
+void set_memnum(U8 bid, S8 memnum);
+void init_vfos(U8 update);

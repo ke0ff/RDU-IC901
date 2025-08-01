@@ -20,11 +20,6 @@
  *
  *******************************************************************/
 
-// NOT-USED: SSI3CLK (SCLK, pin 5) connected to PQ0
-// NOT-USED: SSI3FSS (/CS, pin 6) connected to PQ1
-// NOT-USED: SSI3TX (MOSI, pin 11) connected to PQ2
-// SSI3RX (MISO, pin 27) connected to PQ3
-
 #include <stdint.h>
 #include "inc/tm4c1294ncpdt.h"
 #include "inc/tm4c1294ncpdt_PCTL.h"
@@ -46,7 +41,7 @@ void ssi1_init(void){
 	GPIO_PORTE_AHB_PCTL_R = GPIO_PCTL_PE4_SSI1XDAT0;
 	GPIO_PORTE_AHB_AMSEL_R &= ~(DATA1);			// disable analog functionality on PE
 												// BR for data2 = 4800
-												// SSI3CLK = SYSCLK / (CPSDVSR * (1 + SCR)) { 2 <= CPSDVSR <= 254, even only)
+												// SSI1CLK = SYSCLK / (CPSDVSR * (1 + SCR)) { 2 <= CPSDVSR <= 254, even only)
 	SSI1_CR1_R = 0x00000000;					// disable SSI, master mode
 	SSI1_CPSR_R = (SYSCLK / ((1 + SSI1_SCR) * SSI1_BR));
 	SSI1_CR0_R = (SSI1_SCR << SSI_CR0_SCR_S) | SSI_CR0_DSS_8 | SSI_CR0_SPH | SSI_CR0_SPO; // SCR = [15:8], SPH[7] = 0, SPO[6] = 1 ti, DSS = 8-bit data,,, SSI_CR0_FRF_TI |

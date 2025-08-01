@@ -55,7 +55,7 @@
 #define	ONEMIN	(SEC60)
 #define	REG_WAIT_DLY 200			// 200ms wait limit for register action
 #define RESP_SAMP SEC100MS			// sets resp rate
-#define	SOUT_PACE_TIME	9			// 33/4800 s for one SOUT msg
+#define	SOUT_PACE_TIME	11			// 33/4800 s for one SOUT msg
 #define	SIN_PACE_TIME	50			// wait a little over 2 word times (2 x 32/4800 s for one SIN word)
 
 #define	CLI_BUFLEN	80						// CLI buffer length
@@ -68,7 +68,7 @@
 #define TIMERA_MIS_MASK	TIMER_MIS_AMASK
 #define TIMERB_MIS_MASK	TIMER_MIS_BMASK
 
-#define	DIAL_DEBOUNCE	100			// 20 ms dial debounce
+#define	DIAL_DEBOUNCE	20			// 20 ms dial debounce
 
 // ***********************
 // GPIO PORT BITMAPS
@@ -358,7 +358,7 @@
 //  for normal mode.
 // SYSCLK value in Hz
 
-#define	MASTER_4800	4857
+#define	MASTER_4800	4800
 
 #define	SSI0_BR		3000000									// SSI0, NVRAM tx/rx, bit rate (3MHz)
 #define	SSI0_SCR	19										// SSI0 SCR value
@@ -392,7 +392,7 @@
 #define	SIN_EOT_TIME		(18*SIN_BIT_TIME)					// 1 sin word time + 2 stop bits
 // timer definitions
 #define TIMER1_PS 31											// prescale value for timer1
-#define	TIMER1_FREQ			(115200/11)							// timer1 intr freq, 11 bits at 115200 baud
+#define	TIMER1_FREQ			(115200/13)							// timer1 intr freq, 11 bits at 115200 baud
 //#define TIMER3_ILR 0xffff			// timer 3 interval (24 bit)
 //#define TIMER3_PS 0xff
 //#define TIMER1_PS 32

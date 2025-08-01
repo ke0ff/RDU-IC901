@@ -61,7 +61,7 @@ U16	sin_addr0;							// holding registers for SIN data (addr 0-3)
 U16	sin_addr1;
 U16	sin_addr2;
 U16	sin_addr3;
-U16	sin_flags;							// bitmapped activity flags that signal changed data
+U32	sin_flags;							// bitmapped activity flags that signal changed data
 										// addr1 and 0 are muxed into a single 32 bit flag (only 16 bits of data are ever transferred)
 U16	sout_flags;							// signal for SOUT changes
 U16	ux_present_flags;					// bitmapped "present" (AKA, "installed") flags.
@@ -106,8 +106,8 @@ U8	ux129_rit_t;
 U8	vol_m;								// main vol
 U8	vol_s;								// sub vol
 
-U8	bandid_m;							// bandid for main (index into above data structures)
-U8	bandid_s;							// bandid for sub (index into above data structures)
+U16	bandid_m;							// bandid for main (index into above data structures)
+U16	bandid_s;							// bandid for sub (index into above data structures)
 
 U16	bandoff_m;							// band-off registers corresponds to band-present bitmap
 U16	bandoff_s;
@@ -121,15 +121,29 @@ U8	mute_band;							// flags to control audio mute function for main/sub (mirror
 U32	vfo_tulim[MAX_BAND];
 // TX lower frequency limits for each band
 U32	vfo_tllim[MAX_BAND];
+/*
+#define ID10M		0x01				// UX-29
+#define ID6M		0x02				// UX-59
+//#define ID2M		0x03
+#define ID220		0x04				// UX-39
+//#define IDUX440		0x05				// UX-49 (not available to IC901)
+#define ID1200		0x06				// UX-129
+#define ID2M		0x07				// IC901 2m
+#define ID440		0x08				// IC901 UHF
+#define ID2MSSB		0x0A				// S92 2m SSB
+#define IDWBRX		0x0C				// R91 WBRX
+#define ID2MSSBD	0x0A				// 2mSSB "dials"
+*/
 
 // upper frequency limits for each band
-U32	vfo_ulim[] = { 40000L, 60000L, 170000L, 228000L, 470000L, 1310000L };
+//				   10m        6m         2m          220         440         1296         wbfm         2mssb
+U32	vfo_ulim[] = { 40000000L, 60000000L, 170000000L, 228000000L, 470000000L, 1310000000L, 1000000000L, 148000000L };
 // lower frequency limits for each band
-U32	vfo_llim[] = { 27000L, 45000L, 130000L, 215000L, 420000L, 1200000L };
+U32	vfo_llim[] = { 27000000L, 45000000L, 130000000L, 215000000L, 420000000L, 1200000000L, 400000L,     140000000L };
 // upper TX offset frequency limits for each band (lower limit is zero for all bands)
-U32	offs_ulim[] = { 13000L, 15000L, 40000L, 13000L, 50000L, 900000L };
+U32	offs_ulim[] = { 13000L,   15000L,    40000L,     13000L,     50000L,     900000L,     0L,          20000L };
 // Mem NVRAM base address table
-U32 mem_band[] = { ID10M_MEM, ID6M_MEM, ID2M_MEM, ID220_MEM, ID440_MEM, ID1200_MEM };
+U32 mem_band[] = { ID10M_MEM, ID6M_MEM,  ID2M_MEM,   ID220_MEM,  ID440_MEM,   ID1200_MEM, IDR91_MEM,   IDS92_MEM };
 //U32 mem_band[1] = { ID10M_MEM };
 // mem name strings
 char memname[NUM_VFOS][MEM_NAME_LEN];
@@ -139,24 +153,73 @@ char	ud_buf[UD_MAX];
 U8		ud_head;
 U8		ud_tail;
 
+char	db_buf[50];
+
 // **************************************************************
 
-#define	PLL_BUF_MAX	14
+#define	PLL_BUF_MAX	20
 uint64_t	pll_buf[PLL_BUF_MAX];				// PLL data buffer
 U8			pll_ptr;							// pll_buf index
+U8			pll_ptr_t;							// pll_buf tail index
+U8			pll_ptr_err;						// pll_buf pointer error
 
 // reset units
 //#define	SO_INIT_LENA	2
-uint8_t	so_inita[] = {	0x00, 0x73, 0x09, 0x12, 0x1b, 0x24,
-						0x36, 0x38, 0x40, 0x48, 0x50, 0x58 };
+/*uint8_t	so_inita[] = {	0x00, 0x73, 0x09, 0x12, 0x1b, 0x24,
+						0x36, 0x38, 0x40, 0x48, 0x50, 0x58 };*/
 
-#define	SO_INITA_LEN	(sizeof(so_inita)/sizeof(uint8_t))	// # elements in inita array
+//#define	SO_INITA_LEN	(sizeof(so_inita)/sizeof(uint8_t))	// # elements in inita array
 // initA frame constants
-#define	SO_INITA_0		0x7000000000			// base reset frame
-#define	SO_INITA_1		0x000000001F			// band search root frame
-#define	SO_INITA_R91_0	0x6000000000			// S91A 1st search frame
-#define	SO_INITA_R91_1	0x000000007F			// S91A 2nd search frame
-#define	INITA_WAIT		3000					// ms debug value.  Real value SB 60 ms
+#define	INITA_WAIT		100					// ms debug value.  Real value SB 60 ms
+
+uint64_t so_inita[] = { 0x000000001F,
+						0x7300010B1F,
+						0x090000001F,
+						0x120000001F,
+						0x1B0000001F,
+						0x240000001F,
+						0x360000001F,
+						0x380000001F,
+						0x400000001F,
+						0x480000001F,
+						0x500000001F,
+						0x580000001F };
+
+#define	SO_INITA_R91_0	0x6000000000LL			// S91A 1st search frame
+#define	SO_INITA_R91_1	0x00000000FFLL			// S91A 2nd search frame
+
+uint64_t so_initb[] = { 0x388002803F,
+						0x388002803F,
+						0x388019421F,
+						0x748000181F,
+						0x750040091F,
+						0x760004811F,
+						0x41C000023F,
+						0x41C000023F,
+						0x41C01220DF,
+						0x41C000011F,
+						0x41C000007F,
+						0x74C000181F,
+						0x750040121F,
+						0x760020221F
+						};
+
+
+/*uint64_t so_initb[] = { 0x4080000A3F,
+						0x4080000A3F,
+						0x40804AA2DF,
+						0x408000011F,
+						0x408000007F,
+						0x70C000181F,
+						0x710040811F,
+						0x720002111F,
+						0x39C002803F,
+						0x39C002803F,
+						0x39C0190C9F,
+						0x7080001FFF,
+						0x710040221F,
+						0x7200080A1F
+						};
 
 uint64_t so_initb[] = { 0x748000181F,
 						0x750001091F,
@@ -171,10 +234,11 @@ uint64_t so_initb[] = { 0x748000181F,
 						0x36B00001FF,
 						0x74C000181F,
 						0x750040421F,
-						0x760010221F };
+						0x760010221F };*/
 
+#define	SO_INITA_LEN	(sizeof(so_inita)/sizeof(uint64_t))	// # elements in inita array
 #define	SO_INITB_LEN	(sizeof(so_initb)/sizeof(uint64_t))	// # elements in initb array
-#define	SO_INIT_PACE	20						// pacing value for SOUT words
+#define	SO_INIT_PACE	10									// pacing value for SOUT words
 
 // **************************************************************
 // local Fn declarations
@@ -182,6 +246,8 @@ uint64_t so_initb[] = { 0x748000181F,
 char get_updn2(void);
 U8 get_bandid(U32 freqMM);
 U8 get_busy(void);
+U32 brev(U32 ddin);
+U8  tstptr(U8 pllptr);
 
 //-----------------------------------------------------------------------------
 // ***** START OF CODE *****
@@ -196,73 +262,84 @@ void init_radio(void){
 	U8	j;
 	U8	k;
 	U16	ii;
+	U16	jj;
+	U16	kk;
 	U8	usnbuf[16];		// User SN buffer
 //	char	ibuf[25];	// sprintf/putsQ debug patch !!!
 
 	putsQ("BaseINIT...");
+//	sprintf(db_buf,"SOlen %d %d", SO_INITA_LEN, SO_INITB_LEN);
+//	putsQ(db_buf);
 	wait(50);
+	while(got_sin()){									// clear transients
+		get_sin();
+	}
+
+	wait(3000); // !!!debug
+
 	ud_head = 0;
 	ud_tail = 0;
 	ux_present_flags = 0;								// start with no modules
-	// send init array 1 (reset)
-	send_so(SO_INITA_0);
-	wait(SO_INIT_PACE);
-	for(i=0; i<SO_INITA_LEN; i++){						// do base module reset
-		send_so(SO_INITA_1 | ((U64)so_inita[i] << 32));
+	// send init array 1 (reset) //////////////////////////
+	for(i=0; i<SO_INITA_LEN; i++){						// do base module baseline ... this is parrot data, a real baseline needs to be written using actual radio settings
+		send_so(so_inita[i], 0);
 		wait(SO_INIT_PACE);
 	}
-	send_so(SO_INITA_R91_0);
-	wait(8);											// !!! need to figure out a way to handle the 80b send case of the UX-R91 !!!
-	send_so(SO_INITA_R91_1);
+	send_so(SO_INITA_R91_0, 0);
+	send_so(SO_INITA_R91_1, 1);
+	set_wait(30);
+	j = 1;
+	while(is_wait() && j){
+		if(got_sin() == 1){
+//			putchar_bQ('1'); //!!! debug
+			ii = get_sin();								// get the present flags from ASD stream
+			if(!(ii & SIN_ADDR_MASK)){
+				ii >>= 2;
+				for(kk=0x800, jj=0; kk; kk>>=1){		// bit reverse
+					if(ii & 0x01){
+						jj |= kk;
+					}
+					ii >>= 1;
+				}
+				if(jj&0x100) jj |= 0x010;				// remap to compressed flag format
+				if(jj&0x080) jj |= 0x004;
+				jj = (jj&0x3f) | ((jj&0x600)>>3);
+				ux_present_flags = jj;
+				j = 0;									// set exit
+
+				sprintf(db_buf,"%04x",ux_present_flags); //!!! debug
+				putsQ(db_buf);
+
+			}
+		}
+	}
+	wait(15);
 	// send init array 2 (UX module query)
 	set_wait(INITA_WAIT);
 	i = 1;
-	do{
+/*	do{
 		// process input until timeout or valid data received
 		process_SIN(0);
 		// data valid if non-zero AND the "0" SIN0_ALL bits are zero in the flags register
 		if(ux_present_flags && !(ux_present_flags & ~(SIN0_ALL | SIN0_STOP))){
 			i = 0;
 		}
-	}while(is_wait() && i);
-	putsQ("RadioINIT...");
+	}while(is_wait() && i);*/
+	putssQ("RadioINIT...");
 	for(i=0; i<SO_INITB_LEN; i++){						// do base module baseline ... this is parrot data, a real baseline needs to be written using actual radio settings
-		send_so(so_initb[i]);
+		send_so(so_initb[i], 0);
 		wait(SO_INIT_PACE);
 	}
-/*	for(i=0, j=0x01; i<(SO_INITB_LEN-1); i++, j<<=1){
-		send_so(so_initb[i]);							// send a query message to each possible module
-		set_wait(20);
-		do{
-			k = get_busy();								// clean out input buffer after module select
-		}while(is_wait());
-//		putchar_bQ('0'); //!!! debug
-		set_wait(SIN_PACE_TIME);
-		k = 0;
-		do{								// look for module present
-			if(get_busy() == 1){
-//				putchar_bQ('1'); //!!! debug
-				ux_present_flags |= j;					// and set the present flag if the busy bit is active
-				k = 1;									// break out
-			}
-		}while(is_wait() && !k);
-	}
-	ux_present_flags &= IDALL_B;						// mask known modules*/
-	// !!! need to trap exceptions here if only 1 or no modules present
-	//
-	// send init array 3 (base init)					// !!! this needs to get deprecated...
-/*	for(i=0; i<SO_INIT_LENC; i++){						// send a fixed init string to place base resources
-		send_so(so_initc[i]);							// into a known (if not relevant) state
-		wait(10);
-	}*/
+	putssQ("\n");
+	// end of base init //////////////////////////
 	// recall vfo NV data
 	recall_vfo();
 	// validate VFOs to validate NVRAM contents
 	k = TRUE;
-	for(i=ID10M_IDX; i<IDMAX; i++){
+/*	for(i=ID10M_IDX; i<IDMAX; i++){
 		if(vfo_p[i].vfo > vfo_ulim[i]) k = FALSE;		// if VFO is out of limit, invalidate the NVRAM
 		if(vfo_p[i].vfo < vfo_llim[i]) k = FALSE;
-	}
+	}*/
 	if(!k) putsQ("NVRAMfail");							// display error msg to console
 	rwusn_nvr(usnbuf, 0);
 	ii = (U16)usnbuf[14];
@@ -274,18 +351,24 @@ void init_radio(void){
 		k = FALSE;
 		putsQ("USNfail");								// display error msg to console
 	}
+
+//	k = FALSE;
+
+	// if NVRAM invalid, re-init /////////////////
 	if(!k){
 		// Validation fail, stored VFO data corrupt: re-initialize...
 		// (nvram_fix(ii) is the function we need here.  Maybe someday...)
 		putsQ("Initializing VFOS...");					// display status msg to console
-
+		// First, initialize meta data.  e.g., duplex, tone, vol, squ, etc... for each band unit domain
 		for(i=ID10M_IDX; i<NUM_VFOS; i++){
 			vfo_p[i].dplx = DPLX_S | LOHI_F;			// duplex = S & low power
 			vfo_p[i].ctcss = 0x0c;						// PL setting = 100.0
 			vfo_p[i].sq = LEVEL_MAX-6;					// SQ setting
-			vfo_p[i].vol = 20;							// vol setting
+			vfo_p[i].vol = 20;							// vol setting (deprecated)
 			vfo_p[i].tsa = 1;							// tsa/b defaults
 			vfo_p[i].tsb = 2;
+			vfo_p[i].mem = 0;
+			vfo_p[i].call = CALL_MEM;
 			if(i<IDMAX){
 				mem[i] = 0;
 				call[i] = CALL_MEM;
@@ -296,38 +379,16 @@ void init_radio(void){
 			vfo_tllim[i] = vfo_llim[i];
 			memname[i][0] = '\0';						// init mem names
 		}
-		vol_m = 20;										// vol setting
+		vol_m = 20;										// vol setting (is nor one setting for the radio, not per band unit domain)
 		vol_s = 20;
-		vfo_p[ID10M_IDX].vfo = 29100L;					// each band has a unique initial freq
-		vfo_p[ID6M_IDX].vfo = 52525L;
-		vfo_p[ID2M_IDX].vfo = 146520L;
-		vfo_p[ID220_IDX].vfo = 223500L;
-		vfo_p[ID440_IDX].vfo = 446000L;
-		vfo_p[ID1200_IDX].vfo = 1270000L;
-		vfo_p[ID10M_IDX].offs = 100;					// each band has a unique initial TX offset
-		vfo_p[ID6M_IDX].offs = 1000;
-		vfo_p[ID2M_IDX].offs = 600;
-		vfo_p[ID220_IDX].offs = 1600;
-		vfo_p[ID440_IDX].offs = 5000;
-		vfo_p[ID1200_IDX].offs = 20000;
-		// init temp vfos
-		vfo_p[ID10M_IDX+IDMAX].vfo = 29100L;			// each band has a unique initial freq
-		vfo_p[ID6M_IDX+IDMAX].vfo = 52525L;
-		vfo_p[ID2M_IDX+IDMAX].vfo = 146520L;
-		vfo_p[ID220_IDX+IDMAX].vfo = 223500L;
-		vfo_p[ID440_IDX+IDMAX].vfo = 446000L;
-		vfo_p[ID1200_IDX+IDMAX].vfo = 1270000L;
-		vfo_p[ID10M_IDX+IDMAX].offs = 100;				// each band has a unique initial TX offset
-		vfo_p[ID6M_IDX+IDMAX].offs = 1000;
-		vfo_p[ID2M_IDX+IDMAX].offs = 600;
-		vfo_p[ID220_IDX+IDMAX].offs = 1600;
-		vfo_p[ID440_IDX+IDMAX].offs = 5000;
-		vfo_p[ID1200_IDX+IDMAX].offs = 20000;
+		// Next, init op frequency and offsets for each domain
+		init_vfos(0);
+		// UX129 has separate meta data for VXO
 		ux129_xit = 0;									// X/RIT settings
 		ux129_rit = 0;
 		clear_xmode();									// init xmode to no mem/call
 		push_vfo();										// push new data vfo to nvram (hib)
-		// init mems
+		// init all mems from the VFO in each domain
 		putsQ("Initializing MEMS...");					// display status msg to console
 		// copy default VFOs to memory space
 		for(bandid_m=ID10M_IDX; bandid_m<=IDMAX; bandid_m++){
@@ -335,9 +396,12 @@ void init_radio(void){
 				write_mem(MAIN, i);
 			}
 		}
+		// default band selections (2m & 440)
 		bandid_m = MERR_BAND;							// default to error, figure out assignment below...
 		bandid_s = SERR_BAND;
+		set_bandnv();									// write'm to NVRAM
 		ii = nvram_sn();
+		// update USN in the NVRAM
 		usnbuf[14] = (U8)ii;
 		usnbuf[15] = (U8)(ii >> 8);
 		rwusn_nvr(usnbuf, CS_WRITE);					// set version SN to validate version config
@@ -350,16 +414,17 @@ void init_radio(void){
 //		get_lohi(MAIN, 1);
 //		get_lohi(SUB, 1);
 	}
+	// END NVRAM INIT ////////////////////////////
 	putsQ("Validate selected module...");				// display status msg to console
 	// double-check band-ids for validity against installed hardware
-	if(bandid_m >= BAND_ERROR){
+	if(bandid_m >= MAX_BAND){
 		if(!(set_bit(bandid_m) & ux_present_flags)){
 			bandid_m = MERR_BAND;						// set main invalid if not present
 			putsQ("!Merror!");							// display status msg to console
 		}
 		bandid_s = SERR_BAND;							// if main invalid, so is sub (will get reassigned below)
 	}else{
-		if(bandid_s >= BAND_ERROR){
+		if(bandid_s >= MAX_BAND){
 			if(!(set_bit(bandid_s) & ux_present_flags)){
 				bandid_s = SERR_BAND;					// set sub invalid if not present
 				putsQ("!Serror!");						// display status msg to console
@@ -371,10 +436,10 @@ void init_radio(void){
 	i = 0;
 	do{
 		if(j&ux_present_flags){							// pick first two modules present to be main/sub
-			if(bandid_m >= BAND_ERROR){					// only try to assign if error
+			if(bandid_m >= MAX_BAND){					// only try to assign if error
 				if(i != bandid_s) bandid_m = i;			// assign if not already taken by sub-band
 			}else{
-				if(bandid_s >= BAND_ERROR){				// only try to assign if error
+				if(bandid_s >= MAX_BAND){				// only try to assign if error
 					if(i != bandid_m) bandid_s = i;		// assign if not already taken by main-band
 				}
 			}
@@ -383,20 +448,16 @@ void init_radio(void){
 		j <<= 1;
 	}while(j<=ID1200_B);
 	// if main band is error, copy up sub-band
-	if(bandid_m >= BAND_ERROR){
+	if(bandid_m >= MAX_BAND){
 		bandid_m = bandid_s;
-		if(bandid_s >= BAND_ERROR){
+		if(bandid_s >= MAX_BAND){
 			bandid_s = SERR_BAND;
 			putsQ("!Serror!");							// display status msg to console
 		}
 	}
-
-//		bandid_m = ID2M_IDX;	//!!! need to choose lowest 2 present modules
-//		bandid_s = ID440_IDX;
-//	ux_present_flags = 0x3f; //!!! force all modules on for debug
 	i = 0;
-	if(bandid_s >= BAND_ERROR) i |= NO_SUX_PRSNT;
-	if(bandid_m >= BAND_ERROR) i |= NO_MUX_PRSNT;
+	if(bandid_s >= MAX_BAND) i |= NO_SUX_PRSNT;
+	if(bandid_m >= MAX_BAND) i |= NO_MUX_PRSNT;
 	set_sys_err(i);
 
 	read_xmode();										// pull xmode from NVRAM
@@ -416,23 +477,27 @@ void init_radio(void){
 			read_mem(SUB, call[bandid_s]);				// copy call mem
 		}
 	}
-	force_push_radio();
+	force_push_radio(1);
 	update_radio_all(UPDATE_ALL);						// force radio update
 	i = 0;
-	while(i < 3){
+	while(i < 4){
 		if(process_SOUT(0) == 0){
 			i++;
+			wait(10);
 		}
 	}
 	mute_band = MS_MUTE | SUB_MUTE;
-	wait(SOUT_PACE_TIME);
-	send_so(0x38800021);								// this is what the IC-901 does... times 2 ???
-	wait(SOUT_PACE_TIME);
-	send_so(0x38800021);
-	wait(SOUT_PACE_TIME);
+//	wait(SOUT_PACE_TIME);
+//	send_so(0x38800021);								// this is what the IC-901 does... times 2 ???
+//	wait(SOUT_PACE_TIME);
+//	send_so(0x38800021);
+//	wait(SOUT_PACE_TIME);
+	wait(2000);
 	putssQ("UX Installed: 0x");
-	puthexQ(ux_present_flags);
+	puthexQ((U8)(ux_present_flags>>8));
+	puthexQ((U8)ux_present_flags);
 	putsQ(" ");
+	if(!ux_present_flags) ux_present_flags = 0x14;
 	return;
 }
 
@@ -442,8 +507,8 @@ void init_radio(void){
 void  process_SIN(U8 cmd){
 	U16	sin_data;
 	U16	sin_addrs;
-	U16	ii;				// temp
-	U16 tt;
+	U32	ii;				// temp
+	U32 tt;
 	char	dbuf[35];	// !!! debug buff
 	static U32 lerr;
 
@@ -453,9 +518,8 @@ void  process_SIN(U8 cmd){
 		sin_addr1 = 0;
 		sin_addr2 = 0;
 		sin_addr3 = 0;
-		sin_flags = 0;
+		sin_flags = 0L;
 		lerr = 10L;
-		ptt_mem = 0x10L;
 	}else{												// normal (run) branch
 		if(got_sin()){
 			sin_time(SIN_ACTIVITY);						// ping SIN activity timer
@@ -464,11 +528,11 @@ void  process_SIN(U8 cmd){
 			sin_flags &= ~SIN_SINACTO_F;				// clear timeout error
 			sin_addrs = sin_data & SIN_ADDR_MASK;		// separate address from data payload
 			switch(sin_addrs){							// process SIN data based on addr
-			case SIN_ADDR_INIT:				// ADDR 0 - IPL init results (modules present)
+			case (SIN_ADDR_INIT):				// ADDR 0 - IPL init results (modules present)
 				sin_addr0 = sin_data;					// store new band present data (!!! for debug only)
 				break;
 
-			case  SIN_ADDR_PRIME:			// ADDR 1 - SRF and COS
+			case  (SIN_ADDR_PRIME):				// ADDR 1 - SRF and COS
 				if(sin_data != sin_addr1){				// if data is new (different == new)
 					// process new addr1 data ... calculate change flags
 					ii = (sin_data ^ sin_addr1) & SIN1_DATA;
@@ -477,25 +541,25 @@ void  process_SIN(U8 cmd){
 					if(ii & SIN_SRFB) tt |= SIN_SRFS_CF;
 					ii >>= SIN1_CF_SHR;
 					ii &= ~(SIN_SRFM_CF | SIN_SRFS_CF);
-					sin_flags |= ii | tt;				// store change flags
+					sin_flags |= (ii | tt);				// store change flags
 					sin_addr1 = sin_data;				// store new data
 				}
 				break;
 
-			case SIN_ADDR_SPRDC:			// ADDR 2 - operator discretes (UP/DN/PTT) and tone decode
-				// process ADDR == 0 data
+			case (SIN_ADDR_SPRDC):				// ADDR 2 - operator discretes (UP/DN/PTT) and tone decode
+				// process ADDR == 2 data
 				if(sin_data != sin_addr2){				// if data is new (different == new)
 					// process new addr0 data ... calculate change flags
-					ii = ((sin_data ^ sin_addr2) & SIN2_DATA) << SIN2_CF_SHL;
+					ii = (U32)((sin_data ^ sin_addr2) & SIN2_DATA) << SIN2_CF_SHL;
 					sin_flags |= ii;
 					sin_addr2 = sin_data;
 				}
 				break;
 
-			case SIN_ADDR_PAGNG:			// ADDR 3 - paging
+			case (SIN_ADDR_PAGNG):				// ADDR 3 - paging
 				if(sin_data != sin_addr3){				// if data is new (different == new)
 					// process new addr0 data ... calculate change flags
-					ii = (((sin_data ^ sin_addr3) & SIN3_DATA));
+					ii = (U32)(((sin_data ^ sin_addr3) & SIN3_DATA));
 					if(ii & SIN_CODE_MASK){
 						sin_flags |= SIN_CODE_CF;
 					}
@@ -556,6 +620,7 @@ U8 process_SOUT(U8 cmd){
 
 	if(cmd == 0xff){								// initial program load (reset) branch
 		pll_ptr = 0xff;								// set index to "idle" state
+		pll_ptr_t = 0;								// set tail index to start of buffer
 		sout_time(0);								// initialize timer and statics
 		xit_count = 0;
 		xit_dir = 0;
@@ -563,6 +628,7 @@ U8 process_SOUT(U8 cmd){
 		last_msqu = 0xff;
 		last_svol = 0xff;
 		last_ssqu = 0xff;
+		ptt_mem = 0xFFFFL;							// force ptt action at IPL
 //		sout_flags = 0;
 	}else{											// normal (run) branch
 		ptti = (sin_addr2 & SIN_SEND) | (GPIO_PORTL_DATA_R & EX766_PTT);				// grab base and EX766 PTT
@@ -570,17 +636,17 @@ U8 process_SOUT(U8 cmd){
 			// no data is being sent branch ...
 			j = 0;
 			if(bandoff_m){																// turn-off band module flag trap, main
-				pll_buf[j++] = bandoff_m << 27;
+				pll_buf[tstptr(j++)] = bandoff_m << 27;
 				pll_ptr = 0;
 				bandoff_m = 0;															// clear signal flag
-				pll_buf[j] = 0xffffffffL;
+				pll_buf[tstptr(j)] = PLL_EOL;
 				k = 0xff;																// processing...
 			}
 			if(bandoff_s){																// turn-off band module flag trap, main
-				pll_buf[j++] = bandoff_s << 27;
+				pll_buf[tstptr(j++)] = bandoff_s << 27;
 				pll_ptr = 0;
 				bandoff_s = 0;															// clear signal flag
-				pll_buf[j] = 0xffffffffL;
+				pll_buf[tstptr(j)] = PLL_EOL;
 				k = 0xff;																// processing...
 			}
 			if(!j){
@@ -643,9 +709,9 @@ U8 process_SOUT(U8 cmd){
 							}
 							if(i != last_mvol){
 								last_mvol = i;
-								pll_buf[0] = ((uint64_t)atten_calc(i) << LEV_SHFT) | MAINLEV_SOUT | VOL_ADDR | OPT12_SOUT;
+								pll_buf[0] = ((uint64_t)atten_calc(i) << LEV_SHFT) | MAINLEV_SOUT | VOL_ADDR | OPT12_SOUT; // !!!need a mech to control OPT | OPT12_SOUT;
 								pll_ptr = 0;
-								pll_buf[1] = 0xfffffffeL;									// set to confirm mute
+								pll_buf[1] = UX_MUTE;									// set to confirm mute
 							}
 							sout_flags &= ~SOUT_MVOL_F;									// clear signal flag
 							break;
@@ -658,9 +724,9 @@ U8 process_SOUT(U8 cmd){
 							}
 							if(i != last_svol){
 								last_svol = i;
-								pll_buf[0] = ((uint64_t)atten_calc(i) << LEV_SHFT) | SUBLEV_SOUT | VOL_ADDR | OPT12_SOUT;
+								pll_buf[0] = ((uint64_t)atten_calc(i) << LEV_SHFT) | SUBLEV_SOUT | VOL_ADDR | OPT12_SOUT; // !!!need a mech to control OPT | OPT12_SOUT;
 								pll_ptr = 0;
-								pll_buf[1] = 0xfffffffeL;								// set to confirm mute
+								pll_buf[1] = UX_MUTE;									// set to confirm mute
 							}
 							sout_flags &= ~SOUT_SVOL_F;									// clear signal flag
 							break;
@@ -669,9 +735,9 @@ U8 process_SOUT(U8 cmd){
 							i = vfo_p[bandid_m].sq;
 							if(i != last_msqu){
 								last_msqu = i;
-								pll_buf[0] = ((uint64_t)atten_calc(i) << LEV_SHFT) | MAINLEV_SOUT | SQU_ADDR | OPT12_SOUT;
+								pll_buf[0] = ((uint64_t)atten_calc(i) << LEV_SHFT) | MAINLEV_SOUT | SQU_ADDR | OPT12_SOUT; // !!!need a mech to control OPT | OPT12_SOUT;
 								pll_ptr = 0;
-								pll_buf[1] = 0xffffffffffffffff;
+								pll_buf[1] = PLL_EOL;
 							}
 							sout_flags &= ~SOUT_MSQU_F;									// clear signal flag
 							break;
@@ -680,17 +746,17 @@ U8 process_SOUT(U8 cmd){
 							i = vfo_p[bandid_s].sq;
 							if(i != last_ssqu){
 								last_ssqu = i;
-								pll_buf[0] = ((uint64_t)atten_calc(i) << LEV_SHFT) | SUBLEV_SOUT | SQU_ADDR | OPT12_SOUT;
+								pll_buf[0] = ((uint64_t)atten_calc(i) << LEV_SHFT) | SUBLEV_SOUT | SQU_ADDR | OPT12_SOUT; // !!!need a mech to control OPT | OPT12_SOUT;
 								pll_ptr = 0;
-								pll_buf[1] = 0xffffffffffffffff;
+								pll_buf[1] = PLL_EOL;
 							}
 							sout_flags &= ~SOUT_SSQU_F;									// clear signal flag
 							break;
 
-						case SOUT_TONE_N:												// send tone message
-							pll_buf[0] = (U32)vfo_p[bandid_m].ctcss | TONE_ADDR;
+						case SOUT_TONE_N:												// send tone enc message
+							pll_buf[0] = ((U64)vfo_p[bandid_m].ctcss << TONE_SHFT) | TONE_ADDR | OPT12_SOUT;
 							pll_ptr = 0;
-							pll_buf[1] = 0xffffffffffffffff;
+							pll_buf[1] = PLL_EOL;
 							sout_flags &= ~SOUT_TONE_F;									// clear signal flag
 							break;
 
@@ -710,10 +776,10 @@ U8 process_SOUT(U8 cmd){
 			k = 0xff;																	// set "processing" flag
 			if(!sout_time(0xff)){														// check for the pacing timer to expire
 				// send buffer, 1 word/pass
-				if((pll_buf[pll_ptr] & 0xfffffff0) != 0xfffffff0){						// (almost) all "f's" is end of buffer semaphore
+				if(pll_buf[pll_ptr] < PLL_EOL){											// if not end of buffer,
 					if((pll_buf[pll_ptr] & UX_XIT_MASK) != UX_XIT){						// process non-xit/rit messages
 //						putsQ("so1");	// !!!debug
-						send_so(pll_buf[pll_ptr++]);									// send next word
+						send_so(pll_buf[pll_ptr++], 0);									// send next word
 						sout_time(SOUT_PACE_TIME);
 						if(pll_ptr >= PLL_BUF_MAX){										// check for hard-end-of-buffer
 							pll_ptr = 0xff;												// set end of tx
@@ -723,12 +789,12 @@ U8 process_SOUT(U8 cmd){
 						if(xit_count){													// if we are still counting:
 							if(xit_count & 0x01){
 								putsQ("x0");	// !!!debug
-								send_so(UX_XIT_CK0);									// alternate FE clk with..
+								send_so(UX_XIT_CK0, 0);									// alternate FE clk with..
 								sout_time(SOUT_PACE_TIME);
 							}else{
 								putsQ("x1");	// !!!debug
-								if(xit_dir) send_so(UX_XIT_CKUP);						// ...REF clk up,
-								else send_so(UX_XIT_CKDN);								// or dn
+								if(xit_dir) send_so(UX_XIT_CKUP, 0);					// ...REF clk up,
+								else send_so(UX_XIT_CKDN, 0);								// or dn
 								sout_time(SOUT_PACE_TIME);
 							}
 							if(--xit_count == 0) pll_ptr++;								// X/RIT done... next pll buffer
@@ -739,7 +805,7 @@ U8 process_SOUT(U8 cmd){
 						}
 					}
 				}else{
-					if(pll_buf[pll_ptr] == 0xfffffffe){									// look for mute confirm semaphore
+					if(pll_buf[pll_ptr] == UX_MUTE){									// look for mute confirm semaphore
 						mute_band |= 0x80;												// set muted flag
 					}
 					pll_ptr = 0xff;														// set end of tx flag
@@ -748,6 +814,22 @@ U8 process_SOUT(U8 cmd){
 		}
 	}
 	return k;
+}
+
+//-----------------------------------------------------------------------------
+// tstptr() tests for valid PLL pointer.  Sets error and returns 0 if out of range.
+//	Else, returns pointer value unchanged
+//-----------------------------------------------------------------------------
+U8  tstptr(U8 pllptr){
+	U8	i=pllptr;		// temp
+
+	if(pllptr >= PLL_BUF_MAX){
+		pll_ptr_err = 0xf0;
+		i = 0;
+		sprintf(db_buf,"pterr %d",pllptr); //!!!
+		putsQ(db_buf);
+	}
+	return i;
 }
 
 //-----------------------------------------------------------------------------
@@ -794,6 +876,8 @@ void  save_vfo(U8 b_id){
 		rw8_nvr(j, vfo_p[i].ctcss, k);
 		rw8_nvr(j, vfo_p[i].sq, k);
 		rw8_nvr(j, vfo_p[i].vol, k);
+		rw8_nvr(j, vfo_p[i].mem, k);
+		rw8_nvr(j, vfo_p[i].call, k);
 		if(i >= IDMAX){
 			rw8_nvr(j, mem[i-IDMAX], k);
 			rw8_nvr(j, call[i-IDMAX], k);
@@ -829,6 +913,39 @@ void  save_mc(U8 focus){
 	rw8_nvr(j, call[i], CS_WRITE | CS_CLOSE);
 	return;
 }
+/*
+//-----------------------------------------------------------------------------
+// save_v() copies vol to NVRAM
+// save_q() copies squ to NVRAM
+//	call this fn anytime vol or squ changes, saves to NVRAM and triggers SOUT stream
+//	mainsub is main/sub, svol is vol/squ
+//-----------------------------------------------------------------------------
+void  save_v(U8 focus){
+
+	// save m/s vol
+	if(mainsub){
+		vfo_p[1].vol = vol_m;
+		data = vol_m
+		sout_flags |= SOUT_MVOL_F;
+	}else{
+		vfo_p[0].vol = vol_s;
+		sout_flags |= SOUT_SVOL_F;
+	}
+	set_vnv(focus);
+	return;
+}
+
+void  save_q(U8 focus){
+
+	// save m/s squ
+	if(focus){
+		sout_flags |= SOUT_MSQU_F;
+	}else{
+		sout_flags |= SOUT_SSQU_F;
+	}
+	set_qnv(focus);
+	return;
+}*/
 
 //-----------------------------------------------------------------------------
 // recall_vfo() copies NVRAM to VFO struct
@@ -844,7 +961,7 @@ void  recall_vfo(void){
 	startid = 0;
 	stopid = NUM_VFOS;
 	k = CS_OPEN;
-	for(i=startid, j=VFO_0; i<stopid; i++){
+	for(i=startid, j=VFO_0; i<stopid; i++){				// pull the vfos our of NVRAM
 		vfo_p[i].vfo = rw32_nvr(j, 0, k);
 		k = CS_IDLE;
 		vfo_p[i].offs = rw16_nvr(j, 0, k);
@@ -852,6 +969,8 @@ void  recall_vfo(void){
 		vfo_p[i].ctcss = rw8_nvr(j, 0, k);
 		vfo_p[i].sq = rw8_nvr(j, 0, k);
 		vfo_p[i].vol = rw8_nvr(j, 0, k);
+		vfo_p[i].mem = rw8_nvr(j, 0, k);
+		vfo_p[i].call = rw8_nvr(j, 0, k);
 		if(i < IDMAX){
 			mem[i] = rw8_nvr(j, mem[i], k);
 			call[i] = rw8_nvr(j, 0, k);
@@ -1021,19 +1140,19 @@ U32  fetch_sin(U8 addr){
 	U32	ii;
 
 	switch(addr){
-	case 0:
+	case SIN_IDX_INIT:
 		ii = sin_addr0;		// IPL init frame
 		break;
 
-	case 1:
+	case SIN_IDX_PRIME:
 		ii = sin_addr1;		// prime frame (COS/SRF)
 		break;
 
-	case 2:
+	case SIN_IDX_SPRDC:
 		ii = sin_addr2;		// PTT/MICud/TONE
 		break;
 
-	case 3:
+	case SIN_IDX_PAGNG:
 		ii = sin_addr3;		// Paging
 		break;
 
@@ -1113,19 +1232,20 @@ void  update_radio_all(U8 vector){
 //-----------------------------------------------------------------------------
 // force_push_radio() sets system to push the VFO structure to HIB RAM
 //-----------------------------------------------------------------------------
-void  force_push_radio(void){
+void  force_push_radio(U8 flag){
 
-//	sout_flags |= SOUT_VUPD_F;
-/*	save_vfo(bandid_m);											// save VFOs
-	save_vfo(bandid_s);
-	set_qnv(MAIN);
-	set_qnv(SUB);
-	set_vnv(MAIN);
-	set_vnv(SUB);
-	set_tonenv(MAIN);
-	set_tonenv(SUB);
-	set_bandnv();
-*/
+	if(flag){
+//		sout_flags |= SOUT_VUPD_F;
+		save_vfo(bandid_m);											// save VFOs
+		save_vfo(bandid_s);
+		set_qnv(MAIN);
+		set_qnv(SUB);
+		set_vnv(MAIN);
+		set_vnv(SUB);
+		set_tonenv(MAIN);
+		set_tonenv(SUB);
+		set_bandnv();
+	}
 	sout_flags |= (SOUT_MSQU_F | SOUT_SSQU_F | SOUT_MVOL_F | SOUT_SVOL_F | SOUT_VUPD_F | SOUT_VFOS_F | SOUT_VFOM_F);
 	return;
 }
@@ -1380,12 +1500,13 @@ uint64_t* setpll(U8 bid, uint64_t* plldata, U8 is_tx, U8 is_main){
     U8	band_idr;		// temps
     uint64_t	ux_noptt;
     uint64_t	ux_ptt;
-    uint64_t	pll;
-    uint64_t	ii;
+    uint32_t	pll;
+//    uint32_t	ii;
     uint64_t	jj;
-    uint64_t	tt;
+    uint32_t	tt;
     uint64_t*	pllptr = plldata;
-static U8	old_tx;
+static	U8	old_tx;
+static	U32	last_pll;
 /*
 #define SOUT_MAIN	0x04000000L
 #define SOUT_SUB	0x02000000L
@@ -1395,9 +1516,26 @@ static U8	old_tx;
 #define SOUT_PTT	0x00200000L	// band unit PTT
 */
 
-	if((!is_tx) && is_main) old_tx = 0;
-    band_idr = get_bandid(vfo_p[bid].vfo / 1000L);		// use vfo frequency to determine band ID
-    ux_noptt = band_idr << 27;							// align band ID in SOUT proto word
+// base bit frames
+//           1         2         3         4
+// 01234567890123456789012345678901234567890
+// SgggguuuP..........................P11111
+//
+// S = start bit (always "0")
+// gggg = global addr
+// uuu = UX addr
+// P..P = payload
+// 1..1 = stop bits
+//
+// Sgggguuu:
+// 00001001 = UX-19
+// 00010010 = UX-59
+// 00100100 = UX-39
+// 00110110 = UX-129
+//
+
+    band_idr = get_bandid(vfo_p[bid].vfo / 1000000L);	// use vfo frequency to determine band ID
+    ux_noptt = 0; //band_idr << 27;							// align band ID in SOUT proto word
     if(is_main){
     	ux_noptt |= SOUT_MAIN | SOUT_PON;				// set module pre-amble bits (main)
     }else{
@@ -1425,7 +1563,6 @@ static U8	old_tx;
     }else{
     	vfotr = vfo_p[bid].vfo;							// no TX, no calc needed
     }
-	// !!!
 /*	char tgbuf[20];
 	sprintf(tgbuf,"frq: %d",vfotr); //!!!
 	putsQ(tgbuf);
@@ -1438,7 +1575,7 @@ static U8	old_tx;
     //	convert VFO freq to chanelized value for PLL formatting
     switch (band_idr & 0x0f) {
     case ID10M:
-        pll = (vfotr - BASE_RX_10M) / 5L;				// convert to 5KHz chan
+        pll = (vfotr - BASE_RX_10M) / 5000L;				// convert to 5KHz chan
         pll += PLL_10M;									// add base PLL bitmap
         if (is_tx) {
             pll -= BASE_TX_10M;							// subtract tx offset (for 10M and 6M)
@@ -1451,7 +1588,7 @@ static U8	old_tx;
         }
         if(is_main){
             if(!old_tx){
-            	pllptr[i++] = ux_noptt | pll;				// on 1st pass, don't turn on PTT
+            	pllptr[i++] = (U64)(ux_noptt | pll);				// on 1st pass, don't turn on PTT
             	old_tx = is_tx;
             }
         }else{
@@ -1460,11 +1597,11 @@ static U8	old_tx;
         if(is_tx){
             pllptr[i++] = ux_ptt | pll;					// store PLL plus PTT
         }
-        pllptr[i] = 0xffffffff;							// set end of PLL update string
+//        pllptr[i] = PLL_EOL;							// set end of PLL update string
         break;
 
     case ID6M:
-        pll = (vfotr - BASE_RX_6M) / 5L;				// convert to 5KHz chan
+        pll = (vfotr - BASE_RX_6M) / 5000L;				// convert to 5KHz chan
         pll += PLL_6M;									// add base PLL bitmap
         if (is_tx) {
             pll -= BASE_TX_6M;							// subtract tx offset (for 10M and 6M)
@@ -1486,111 +1623,137 @@ static U8	old_tx;
         if(is_tx){
             pllptr[i++] = ux_ptt | pll;					// store PLL plus PTT
         }
-        pllptr[i] = 0xffffffff;							// set end of PLL update string
+//        pllptr[i] = PLL_EOL;							// set end of PLL update string
         break;
 
     case ID2M:
-        pll = (vfotr - BASE_RX_2M) / 5L;				// convert to 5KHz chan
+        pll = (vfotr - BASE_RX_2M) / 5000L;				// convert to 5KHz chan
         pll += PLL_2M;									// add base PLL bitmap
-        if (is_tx) {
-            pll += BASE_TX_2M;							// add tx offset
-        }
-        // insert a "0" into bit 7
-        pll = ((pll << 1) & 0x3ff80L) | (pll & 0x003fL);
-        if(is_main){
-            if(!old_tx){
-            	pllptr[i++] = ux_noptt | pll;				// on 1st pass, don't turn on PTT
-            	old_tx = is_tx;
-            }
-        }else{
-        	pllptr[i++] = ux_noptt | pll;				// on 1st pass, don't turn on PTT
-        }
         if(is_tx){
-            pllptr[i++] = ux_ptt | pll;					// store PLL plus PTT
+            pll += BASE_TX_2M;							// add tx offset
+            ux_noptt = ux_ptt;
         }
-        pllptr[i] = 0xffffffff;							// set end of PLL update string
+        pll <<= 1;										// place reg select = 0
+        sprintf(db_buf,"pll: 0x%05x", pll); //!!!
+        putsQ(db_buf);
+
+//        sprintf(db_buf,"UX: 0x%x%08x", (U32)(ux_noptt>>32),(U32)(ux_noptt));
+//        putsQ(db_buf);	// !!!
+        ux_noptt = ux_noptt & ~SOUT_MAIN;				// mask off "M"
+        ux_noptt ^= SOUT_SUB;							// invert "S" to make it "main"
+        ux_noptt <<= 2;
+//        sprintf(db_buf,"no: 0x%x%08x", (U32)(ux_noptt>>32),(U32)(ux_noptt));
+//        putsQ(db_buf);	// !!!
+
+        jj = (U64)(pll << 5) | VHF_BASE;				// align to P..P with addr bit=0 (lsb)
+        pllptr[i++] = ux_noptt | INIT_VHF;				// REF init
+        pllptr[i++] = ux_noptt | jj;					// store PLL only
+//        pllptr[i] = PLL_EOL;							// set end of PLL update string
         break;
 
     case ID220:
-        pll = (vfotr - BASE_RX_220) / 5L;				// convert to 5KHz chan
+        pll = (vfotr - BASE_RX_220) / 5000L;				// convert to 5KHz chan
         pll += PLL_220;									// add base PLL bitmap
-        if (is_tx) {
+        if(old_tx){
+            pllptr[i++] = (U64)(last_pll & ~SOUT_PTT);	// turn off PTT with same VCO setting first
+        }
+        if (is_tx && is_main) {
             pll += BASE_TX_220;							// add tx offset
+        	ux_noptt = ux_ptt;
         }
-        // insert a "0" into bit 7
+        // insert a "0" into bit 6
         pll = ((pll << 1) & 0x3ff80L) | (pll & 0x003fL);
-        if(is_main){
-            if(!old_tx){
-            	pllptr[i++] = ux_noptt | pll;				// on 1st pass, don't turn on PTT
-            	old_tx = is_tx;
-            }
-        }else{
-        	pllptr[i++] = ux_noptt | pll;				// on 1st pass, don't turn on PTT
-        }
-        if(is_tx){
-            pllptr[i++] = ux_ptt | pll;					// store PLL plus PTT
-        }
-        pllptr[i] = 0xffffffff;							// set end of PLL update string
+        jj = (U64)(ux_noptt | (pll << 5));
+        jj |= UX39_BASE;
+        pllptr[i++] = jj;								// store PLL frame
+        if(is_tx && is_main) last_pll = jj;				// save PLL
+//        pllptr[i] = PLL_EOL;							// set end of PLL update string
         break;
 
-    case ID440:
-        pll = (vfotr - BASE_RX_440) / 5L;				// convert to 5KHz chan
+	case ID440:
+    	pll = (vfotr - BASE_RX_440) / 5000L;				// convert to 5KHz chan
         pll += PLL_440;									// add base PLL bitmap
         if (is_tx) {
-            pll += BASE_TX_440;							// add tx offset
+        	pll += BASE_TX_440;							// add tx offset
+            ux_noptt = ux_ptt;
         }
-        if(is_main){
-            if(!old_tx){
-            	pllptr[i++] = ux_noptt | pll;				// on 1st pass, don't turn on PTT
-            	old_tx = is_tx;
-            }
-        }else{
-        	pllptr[i++] = ux_noptt | pll;				// on 1st pass, don't turn on PTT
-        }
-        if(is_tx){
-            pllptr[i++] = ux_ptt | pll;					// store PLL plus PTT
-        }
-        pllptr[i] = 0xffffffff;							// set end of PLL update string
+        // insert a "0" into bit 6 ==> [...ponmlkjihg0fedcba]
+        pll = ((pll << 1) & 0x3ff80L) | (pll & 0x003fL);
+        sprintf(db_buf,"pll: 0x%05x", pll); //!!!
+        putsQ(db_buf);
+
+//        sprintf(db_buf,"UX: 0x%x%08x", (U32)(ux_noptt>>32),(U32)(ux_noptt));
+//        putsQ(db_buf);	// !!!
+        ux_noptt = ux_noptt & ~SOUT_MAIN;				// mask off "M"
+        ux_noptt ^= SOUT_SUB;							// invert "S" to make it "main"
+        ux_noptt <<= 2;
+//        sprintf(db_buf,"no: 0x%x%08x", (U32)(ux_noptt>>32),(U32)(ux_noptt));
+//        putsQ(db_buf);	// !!!
+
+        tt = (brev(pll)<<7) | (0x2 << 5);				// position PLL div data and reg addr
+        pllptr[i++] = ux_noptt | INIT_UHFR;				// refinit frame (x2)
+        pllptr[i++] = ux_noptt | INIT_UHFR;
+        pllptr[i++] = ux_noptt | INIT_UHFP | (uint64_t)tt; // store PLL
+        pllptr[i++] = ux_noptt | INIT_UHFH;				// post-init frames
+        pllptr[i++] = ux_noptt | INIT_UHFG;
+//        pllptr[i] = PLL_EOL;							// set end of PLL update string
         break;
 
     case ID1200:
-        pll = (vfotr - BASE_RX_1200) / 10L;				// convert to 10KHz chan
+        pll = (vfotr - BASE_RX_1200) / 10000L;				// convert to 10KHz chan
         pll += PLL_1200;							    // add base PLL bitmap
-        if (is_tx) {
+        if (is_tx && is_main) {
             pll += BASE_TX_1200;					    // add tx offset
+        	ux_noptt = ux_ptt;
         }
         // insert a "0" into bit 6 ==> [...ponmlkjihg0fedcba]
         pll = ((pll << 1) & 0x3ff80L) | (pll & 0x003fL);
         // add "code" bits for N-frame
-        pll |= PLL_1200_N;
+//        pll |= PLL_1200_N;
         // bit reverse... tt will contain the new, bit-reversed PLL frame
-        for (ii = 0x80000L, jj = 1L, tt = 0L; ii != 0; ii >>= 1, jj <<=1) {
+/*        for (ii = 0x80000L, jj = 1L, tt = 0L; ii != 0; ii >>= 1, jj <<=1) {
             if (pll & ii) tt |= jj;
-        }
-        pllptr[i++] = ux_noptt | INIT_PLL_1200;			// init frame
-        pllptr[i++] = ux_noptt | tt;					// store PLL plus bit length
-        if(is_tx){
-        	ux_noptt = ux_ptt;
-            pllptr[i++] = ux_ptt | tt;					// store PLL plus PTT
-        }
-        pllptr[i++] = ux_ptt | INIT_PLL_1201;			// post-init frames
-        pllptr[i++] = ux_ptt | INIT_PLL_1202;
-        pllptr[i++] = ux_ptt | INIT_PLL_1203;
-        if(is_tx){
+        }*/
+        tt = (brev(pll)<<8) | (0x2 << 5);				// position PLL div data and reg addr
+        tt |= INIT_PLL_1200;
+        pllptr[i++] = ux_noptt | INIT_REF_1200;			// refinit frame
+        pllptr[i++] = ux_noptt | tt;					// store PLL
+        pllptr[i++] = ux_noptt | INIT_HL_1200;			// post-init frames
+        pllptr[i++] = ux_noptt | INIT_GPR_1200;
+        pllptr[i++] = ux_noptt | INIT_GPI_1200;
+/*        if(is_tx){
             pllptr[i] = UX_XIT | (ux129_xit & (REG_XIT_UP | REG_XIT_CNT));
         }else{
             pllptr[i] = UX_XIT | (ux129_rit & (REG_XIT_UP | REG_XIT_CNT));
-       }
-        pllptr[i] = 0xffffffff;							// set end of PLL update string
-       break;
+        }*/
+        break;
 
     default:											// error trap, set end of update string
         band_idr = 0;
-        pllptr[0] = 0xffffffff;							// set empty PLL update string
-        i = 0xff;
+        i = 0;
         break;
     }
+    if(!is_tx) pllptr[i++] = TONE_NUL;					// null tone string if RX
+    pllptr[i] = PLL_EOL;								// set end of PLL update string
+	if((is_tx) && is_main) old_tx = is_tx;
+	else old_tx = 0;
     return &pllptr[i+1];
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//-----------------------------------------------------------------------------
+// brev() does a bit reverse on a 32b value
+//-----------------------------------------------------------------------------
+U32 brev(U32 ddin){
+	U32	ddout = 0;
+	U32	i;  // temps
+	U32	j;
+
+	// Change the “i” assignment in the for loop to select the limit of bits to shift
+	for(i=0x20000, j=0x00001; i; i>>=1, j<<=1){
+		if(ddin & i) ddout |= j;
+	}
+	return ddout;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1765,7 +1928,7 @@ void put_updn2(char kcode){
 
 ///////////////////////////////////////////////////////////////////////////////
 //-----------------------------------------------------------------------------
-// get_updn() retrieves signal for mic up/dn logic
+// get_updn() retrieves HM-133 signal for mic up/dn logic
 //-----------------------------------------------------------------------------
 char get_updn2(void){
 	char	kcode;
@@ -1787,11 +1950,14 @@ S8 is_mic_updn(U8 ipl, U8 focus, U8 xmq){
 	char		c;			// mud2 signal holding reg
 	static	S8	i;			// return value
 	static	U8	click_mem;	// button pressed memory
+	static	U8	ud_mem;		// button changes
+			U8	ud;
 			S8	rtn = 0;
 
 	if(ipl){
 		i = 0;				// init statics
 		click_mem = 0;
+		ud_mem = 0xff;
 		return 0;
 	}
 	c = get_updn2();
@@ -1839,12 +2005,15 @@ S8 is_mic_updn(U8 ipl, U8 focus, U8 xmq){
 		}
 	}else{
 		// process signal for base mic u/d
-		if(sin_flags & SIN_MUD_CFM){							// if edge flag...
-			if(sin_addr2 & SIN_MUP_CF){							// u/d "clock" active
+		ud = (sin_addr2 & SIN_MUD_M)>>9;						// u/d temp to use with signal mem/edge detect
+		if(ud != ud_mem){										// if edge flag...
+			if(sin_addr2 & SIN_MUD_M){							// u/d "clock" active
 				micdb_time(1);									// set debounce timer
 				i = 0;											// clear statics
 				click_mem = 0;
+				mic_time(0xff);
 			}
+			ud_mem = ud;
 			read_sin_flags(SIN_MUD_CFM);
 		}else{
 			if(!click_mem){
@@ -1940,12 +2109,12 @@ S8 is_mic_updn(U8 ipl, U8 focus, U8 xmq){
 S8 add_vfo(U8 main, S8 adder, U8 daddr){
 	U8	i;
 	S32	delta;
-	U8	bbuf[7];
+	U8	bbuf[15];
 
 	if(main) i = bandid_m;									// get band id for current focus
 	else i = bandid_s;
+	vfot = (U32)vfo_p[i].offs;								// copy to vfot
 	if(daddr & MHZ_OFFS){									// offset adjust: always uses thumbwheel mode
-		vfot = (U32)vfo_p[i].offs;								// copy to vfot
 		bin32_bcds(vfot, bbuf);								// convert to bcd in bbuf
 		add_bcds(bbuf, adder, daddr & MHZ_MASK, 9, 0);		// add/subtract digit
 		vfot = bcds_bin32(bbuf);
@@ -1969,14 +2138,14 @@ S8 add_vfo(U8 main, S8 adder, U8 daddr){
 		}else{
 			if(daddr == MHZ_OFF){							// not MHz mode, adjust using freq step (a or b) setting
 				if(vfo_p[i].dplx & TSA_F){
-					delta = (S32)(vfo_p[i].tsb & 0x07) * 5L;
+					delta = (S32)(vfo_p[i].tsb & 0x07) * 5000L;
 				}else{
-					delta = (S32)(vfo_p[i].tsa & 0x07) * 5L;
+					delta = (S32)(vfo_p[i].tsa & 0x07) * 5000L;
 				}
 				vfo_p[i].vfo += delta * (S32)adder;
 			}
 			if(daddr == MHZ_ONE){							// MHz mode, adjust +/- MHz increments
-				vfo_p[i].vfo += 1000 * (S32)adder;
+				vfo_p[i].vfo += 1000000L * (S32)adder;
 			}
 			if(vfo_p[i].vfo > vfo_ulim[i]){						// same roll-over/under as above
 				vfo_p[i].vfo -= vfo_ulim[i] - vfo_llim[i];
@@ -2088,7 +2257,7 @@ U8 get_memnum(U8 main, U8 adder){
 //-----------------------------------------------------------------------------
 // set_memnum() sets memnum in the indicated bid
 //-----------------------------------------------------------------------------
-void set_memnum(U8 bid, U8 memnum){
+void set_memnum(U8 bid, S8 memnum){
 
 	mem[bid] = memnum;								// error fix
 	return;
@@ -2098,7 +2267,7 @@ void set_memnum(U8 bid, U8 memnum){
 //-----------------------------------------------------------------------------
 // get_callnum() adds "adder" and then returns mem# for main or sub band
 //-----------------------------------------------------------------------------
-U8 get_callnum(U8 main, U8 adder){
+U8 get_callnum(U8 main, S8 adder){
 	U8	k;
 
 	if(main == MAIN){
@@ -2641,4 +2810,50 @@ U8 togg_scanmem(U8 focus){
 	return j & SCANEN_F;								// return masked bit
 }
 
+///////////////////////////////////////////////////////////////////////////////
+//-----------------------------------------------------------------------------
+// init_vfos() inits VFOs for fact init
+//-----------------------------------------------------------------------------
+void init_vfos(U8 update){
+	// init vfos
+	vfo_p[ID10M_IDX].vfo = 29100000L;				// each band has a unique initial freq
+	vfo_p[ID6M_IDX].vfo = 52525000L;
+	vfo_p[ID2M_IDX].vfo = 145450000L;
+	vfo_p[ID220_IDX].vfo = 223500000L;
+	vfo_p[ID440_IDX].vfo = 447375000L;
+	vfo_p[ID1200_IDX].vfo = 1270000000L;
+	vfo_p[IDR91_IDX].vfo = 400000L;
+	vfo_p[IDS92_IDX].vfo = 144200000L;
+	vfo_p[ID10M_IDX].offs = 100;					// each band has a unique initial TX offset
+	vfo_p[ID6M_IDX].offs = 1000;
+	vfo_p[ID2M_IDX].offs = 600;
+	vfo_p[ID220_IDX].offs = 1600;
+	vfo_p[ID440_IDX].offs = 5000;
+	vfo_p[ID1200_IDX].offs = 20000;
+	vfo_p[IDR91_IDX].offs = 0L;
+	vfo_p[IDS92_IDX].offs = 0L;
+	// init temp vfos
+	vfo_p[ID10M_IDX+IDMAX].vfo = 29100000L;			// each band has a unique initial freq
+	vfo_p[ID6M_IDX+IDMAX].vfo = 52525000L;
+	vfo_p[ID2M_IDX+IDMAX].vfo = 145450000L;
+	vfo_p[ID220_IDX+IDMAX].vfo = 223500000L;
+	vfo_p[ID440_IDX+IDMAX].vfo = 447375000L;
+	vfo_p[ID1200_IDX+IDMAX].vfo = 1270000000L;
+	vfo_p[IDR91_IDX+IDMAX].vfo = 400000L;
+	vfo_p[IDS92_IDX+IDMAX].vfo = 144200000L;
+	vfo_p[ID10M_IDX+IDMAX].offs = 100;				// each band has a unique initial TX offset
+	vfo_p[ID6M_IDX+IDMAX].offs = 1000;
+	vfo_p[ID2M_IDX+IDMAX].offs = 600;
+	vfo_p[ID220_IDX+IDMAX].offs = 1600;
+	vfo_p[ID440_IDX+IDMAX].offs = 5000;
+	vfo_p[ID1200_IDX+IDMAX].offs = 20000;
+	vfo_p[IDR91_IDX+IDMAX].offs = 0L;
+	vfo_p[IDS92_IDX+IDMAX].offs = 0L;
+	// opt update
+	if(update){
+		update_radio_all(UPDATE_ALL);				// force radio update
+		force_push_radio(1);
+	}
+	return;
+}
 // end radio.c

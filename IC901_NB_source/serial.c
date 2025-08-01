@@ -54,8 +54,8 @@ U8  bteol;						// BT eol detected
 U8  TI0B;						// UART0 TI0 reflection (set by interrupt)
 #define RXD0_BUFF_END 80		// CCMD rx buff len
 #define RXD1_BUFF_END 80		// CLI rx buff len
-#define TXD0_BUFF_END 100		// tx buffs
-#define TXD1_BUFF_END 100
+#define TXD0_BUFF_END 250		// tx buffs
+#define TXD1_BUFF_END 250
 
 S8   volatile rxd_buff[RXD0_BUFF_END];	// rx data buffer
 U8   volatile rxd_hptr;					// rx buf head ptr
@@ -619,27 +619,29 @@ char putchar0(char c){
 		if(txd_hptr == TXD0_BUFF_END){				// roll over the head
 			txd_hptr = 0;
 		}
-		if(txd_hptr == txd_tptr){
+		while(txd_hptr == txd_tptr);
+/*		{
 			// discard old data
 			txd_tptr += 1;
 			if(txd_tptr == TXD0_BUFF_END){			// roll over the tail
 				txd_tptr = 0;
 			}
 			rxd_stat = RXD_TXBOR;					// if tail == head, signal error
-		}
+		}*/
 	}
 	txd_buff[txd_hptr++] = c;						// place chr into buffer
 	if(txd_hptr == TXD0_BUFF_END){					// roll over the head
 		txd_hptr = 0;
 	}
-	if(txd_hptr == txd_tptr){
+	while(txd_hptr == txd_tptr);
+/*	if(txd_hptr == txd_tptr){
 		// discard old data
 		txd_tptr += 1;
 		if(txd_tptr == TXD0_BUFF_END){				// roll over the tail
 			txd_tptr = 0;
 		}
 		rxd_stat = RXD_TXBOR;					// if tail == head, signal error
-	}
+	}*/
 //	TIMER1_ICR_R = TIMER1_MIS_R & TIMERA_MIS_MASK;	// pre-clear timer flag
 	TIMER1_CTL_R |= (TIMER_CTL_TAEN);				// enable timer
 
@@ -877,19 +879,37 @@ void clr_btptr0(void){
 // puthex(), UART0
 //	displays param as ascii hex
 //-----------------------------------------------------------------------------
-U8 puthex0(U8 dhex){
+U8 puthex(U8 dhex, U8 ch){
 
 	char c;
 
 	c = (dhex >> 4) + '0';
 	if(c > '9') c += 'A' - '9' - 1;
-	putchar0(c);
+	if(ch) putchar1(c);
+	else putchar0(c);
 	c = (dhex & 0x0f) + '0';
 	if(c > '9') c += 'A' - '9' - 1;
-	putchar0(c);
+	if(ch) putchar1(c);
+	else putchar0(c);
 	return (dhex);
 }
 
+//-----------------------------------------------------------------------------
+// putsN0() does puts to UART0 converting all cntl codes to "$xx"
+//-----------------------------------------------------------------------------
+int putsN0(const char *string){
+
+	while(*string){
+		if((*string < ' ') || (*string > 0x7e)){
+			putchar0('$');
+			puthex(*string++, 0);
+		}else{
+			putchar0(*string++);
+		}
+	}
+	putchar0('\n');
+	return 0;
+}
 //===============================================================================================
 //=====================         =================================================================
 //==================== UART1 Fns ================================================================
@@ -1107,23 +1127,6 @@ char putdch(char c){
 }
 
 //-----------------------------------------------------------------------------
-// puthex(), UART1
-//	displays param as ascii hex
-//-----------------------------------------------------------------------------
-U8 puthex(U8 dhex){
-
-	char c;
-
-	c = (dhex >> 4) + '0';
-	if(c > '9') c += 'A' - '9' - 1;
-	putchar1(c);
-	c = (dhex & 0x0f) + '0';
-	if(c > '9') c += 'A' - '9' - 1;
-	putchar1(c);
-	return (dhex);
-}
-
-//-----------------------------------------------------------------------------
 // putsN() does puts to UART1 converting all cntl codes to "$xx"
 //-----------------------------------------------------------------------------
 int putsN(const char *string){
@@ -1131,7 +1134,7 @@ int putsN(const char *string){
 	while(*string){
 		if((*string < ' ') || (*string > 0x7e)){
 			putchar1('$');
-			puthex(*string++);
+			puthex(*string++, 1);
 		}else{
 			putchar1(*string++);
 		}

@@ -130,7 +130,7 @@
 #define	putcharQ(x)		putchar0(x)
 #define	putchar_bQ(x)	putchar_b0(x)
 #define	putdchQ(x)		putdch0(x)
-#define	puthexQ(x)		puthex0(x)
+#define	puthexQ(x)		puthex(x, 0)
 #define	putsNQ(x)		putsN0(x)
 #define	get_btptrQ(x)	get_btptr0(x)
 #define	clr_btptrQ(x)	clr_btptr0(x)
@@ -146,8 +146,7 @@ void initserial(void);
 char putchar0(char c);
 char putdch0(char c);
 char putchar_b0(char c);
-U8 puthex0(U8 dhex);
-U8 puthex1(U8 dhex);
+U8 puthex(U8 dhex, U8 ch);
 char getchr0(void);
 char gotchr0(void);
 U8 gotmsgn0(void);

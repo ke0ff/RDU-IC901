@@ -41,7 +41,7 @@
 //-----------------------------------------------------------------------------
 void dispSWvers(char* s){
 
-	puts0("\n\nIC-901 Controller, The Sequel");
+	puts0("\n\nIC-901F Controller, de KE0FF");
     sprintf(s,"Vers: %s   Date: %s",version_number,date_code);
     puts0(s);
     puts0("Enter \"?\" for help.\n");

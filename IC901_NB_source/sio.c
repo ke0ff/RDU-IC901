@@ -121,21 +121,20 @@ U32 init_sio(U32 sys_clk, U8 flush)
 // b40 is the start bit.  send_so() adds the start bit by masking off bit 40,
 // and then stores the transfer as 5, 8b values to the SPI data register/FIFO
 //--------------------------------------------------------------------------------
-void send_so(uint64_t data){
+void send_so(uint64_t data, U8 r91a){
 	uint8_t		dptr[5];
 	uint8_t 	jk;
 
-	data = (~data);
-	for(jk=5; jk!=0; jk--){
+	data = (~data);											// invert data to compensate for inverted hardware path
+	for(jk=5; jk!=0; jk--){									// break U64 down into 5 bytes
 		dptr[jk-1] = (uint8_t)(data & 0xff);
 		data >>= 8;
 	}
-	dptr[0] |= 0x80;										// set start bit
-	if(SSI1_SR_R & SSI_SR_BSY){								// wait for previous msg to clear
-		wait(!(SSI1_SR_R & SSI_SR_BSY));
-//		wait(2);											// add extra time to complete 2nd stop bit
+	if(!r91a){
+		dptr[0] |= 0x80;									// set start bit if not UX-R91a 2nd-word
 	}
 	for(jk=0; jk<5; jk++){
+		while(SSI1_SR_R & SSI_SR_BSY);						// wait for fifo to empty (this shouldn't hang up unless UX-R91A messages are being sent)
 		SSI1_DR_R = dptr[jk];
 	}
 	return;
