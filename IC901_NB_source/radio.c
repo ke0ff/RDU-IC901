@@ -275,7 +275,15 @@ void init_radio(void){
 		get_sin();
 	}
 
-	wait(3000); // !!!debug
+	amrx(1);
+	wait(200); // !!!debug
+	amrx(0);
+	amtx(1);
+	asrx(1);
+	wait(200); // !!!debug
+	amtx(0);
+	asrx(0);
+	wait(100); // !!!debug
 
 	ud_head = 0;
 	ud_tail = 0;
@@ -359,34 +367,8 @@ void init_radio(void){
 		// Validation fail, stored VFO data corrupt: re-initialize...
 		// (nvram_fix(ii) is the function we need here.  Maybe someday...)
 		putsQ("Initializing VFOS...");					// display status msg to console
-		// First, initialize meta data.  e.g., duplex, tone, vol, squ, etc... for each band unit domain
-		for(i=ID10M_IDX; i<NUM_VFOS; i++){
-			vfo_p[i].dplx = DPLX_S | LOHI_F;			// duplex = S & low power
-			vfo_p[i].ctcss = 0x0c;						// PL setting = 100.0
-			vfo_p[i].sq = LEVEL_MAX-6;					// SQ setting
-			vfo_p[i].vol = 20;							// vol setting (deprecated)
-			vfo_p[i].tsa = 1;							// tsa/b defaults
-			vfo_p[i].tsb = 2;
-			vfo_p[i].mem = 0;
-			vfo_p[i].call = CALL_MEM;
-			if(i<IDMAX){
-				mem[i] = 0;
-				call[i] = CALL_MEM;
-			}
-			vfo_p[i].bflags = 0xff;						// expansion flags
-			vfo_p[i].scanflags = 0xff;					// scan flags (expansion)
-			vfo_tulim[i] = vfo_ulim[i];					// copy RX limits to TX
-			vfo_tllim[i] = vfo_llim[i];
-			memname[i][0] = '\0';						// init mem names
-		}
-		vol_m = 20;										// vol setting (is nor one setting for the radio, not per band unit domain)
-		vol_s = 20;
-		// Next, init op frequency and offsets for each domain
+		// init meta data, op frequencies, and offsets for each domain
 		init_vfos(0);
-		// UX129 has separate meta data for VXO
-		ux129_xit = 0;									// X/RIT settings
-		ux129_rit = 0;
-		clear_xmode();									// init xmode to no mem/call
 		push_vfo();										// push new data vfo to nvram (hib)
 		// init all mems from the VFO in each domain
 		putsQ("Initializing MEMS...");					// display status msg to console
@@ -845,9 +827,10 @@ void  save_vfo(U8 b_id){
 	U8	startid;
 	U8	stopid;
 
-/*	if(b_id >= IDMAX){
-		putsQ("addr+6");
-	}*/
+	if((b_id >= NUM_VFOS) && (b_id != 0xff)){					// failsafe range check
+		putsQ("saverr addr+8");
+		return;
+	}
 	if(b_id == 0xff){
 		startid = 0;
 		stopid = NUM_VFOS;
@@ -856,9 +839,11 @@ void  save_vfo(U8 b_id){
 		stopid = b_id + 1;
 		if((get_xmode(b_id) & (MC_XFLAG)) && (b_id < IDMAX)){
 			// if call or mem mode, just save mem/call#:
-			j = SQ_0 + (VFO_LEN * startid);						// set start @ squ
-			rw8_nvr(j, vfo_p[startid].sq, CS_WRITE|CS_OPEN);	// save squ and vol
-			rw8_nvr(j, vfo_p[startid].vol, CS_WRITE|CS_CLOSE);
+			j = MEM_0 + (VFO_LEN * startid);					// set start @ squ
+			rw8_nvr(j, vfo_p[startid].mem, CS_WRITE|CS_OPEN);	// save squ and vol
+			rw8_nvr(j, vfo_p[startid].call, CS_WRITE);
+			rw8_nvr(j, mem[startid], CS_WRITE);
+			rw8_nvr(j, call[startid], CS_WRITE|CS_CLOSE);
 			return;												// exit now...
 		}
 	}
@@ -867,7 +852,8 @@ void  save_vfo(U8 b_id){
 	vfo_p[1].vol = vol_m;
 	// combine VFO/offset into single 32 bit value
 	k = CS_WRITE | CS_OPEN;
-	for(i=startid, j=VFO_0 + (VFO_LEN * startid); i<stopid; i++){
+//	for(i=startid, j=VFO_0 + (VFO_LEN * startid); i<stopid; i++){
+	for(i=startid, j=VFO_0; i<stopid; i++){
 		rw32_nvr(j, vfo_p[i].vfo, k);							// write each element of the band state in sequence
 		k = CS_WRITE;											// the addr (j) only matters for first call in an "OPEN" sequence.  So...
 																// we don't update it here (the NVRAM increments it automatically).  Saves
@@ -878,12 +864,12 @@ void  save_vfo(U8 b_id){
 		rw8_nvr(j, vfo_p[i].vol, k);
 		rw8_nvr(j, vfo_p[i].mem, k);
 		rw8_nvr(j, vfo_p[i].call, k);
-		if(i >= IDMAX){
-			rw8_nvr(j, mem[i-IDMAX], k);
-			rw8_nvr(j, call[i-IDMAX], k);
-		}else{
+		if(i < IDMAX){											// only store call/mem selections for lower b_id series
 			rw8_nvr(j, mem[i], k);
 			rw8_nvr(j, call[i], k);
+		}else{													// else, dummy stores
+			rw8_nvr(j, 0, k);
+			rw8_nvr(j, 0, k);
 		}
 		rw8_nvr(j, vfo_p[i].bflags, k);
 		rw8_nvr(j, vfo_p[i].scanflags, k);
@@ -895,6 +881,10 @@ void  save_vfo(U8 b_id){
 	rw8_nvr(RIT_0, ux129_rit, CS_WRITE);
 	rw8_nvr(BIDM_0, bandid_m, CS_WRITE);
 	rw8_nvr(BIDS_0, bandid_s, CS_WRITE | CS_CLOSE);
+	if(b_id != 0xff){											// if we just did one VFO, save volumes
+		rw8_nvr(VOL_0, vfo_p[0].vol, CS_WRITE | CS_OPENCLOSE);	// save main
+		rw8_nvr(VOL_0+VFO_LEN, vfo_p[1].vol, CS_WRITE | CS_OPENCLOSE);	// save sub
+	}
 	return;
 }
 
@@ -960,10 +950,10 @@ void  recall_vfo(void){
 
 	startid = 0;
 	stopid = NUM_VFOS;
-	k = CS_OPEN;
-	for(i=startid, j=VFO_0; i<stopid; i++){				// pull the vfos our of NVRAM
+	k = CS_READ|CS_OPEN;
+	for(i=startid, j=VFO_0; i<stopid; i++){				// pull the vfos out of NVRAM
 		vfo_p[i].vfo = rw32_nvr(j, 0, k);
-		k = CS_IDLE;
+		k = CS_READ;
 		vfo_p[i].offs = rw16_nvr(j, 0, k);
 		vfo_p[i].dplx = rw8_nvr(j, 0, k);
 		vfo_p[i].ctcss = rw8_nvr(j, 0, k);
@@ -972,10 +962,10 @@ void  recall_vfo(void){
 		vfo_p[i].mem = rw8_nvr(j, 0, k);
 		vfo_p[i].call = rw8_nvr(j, 0, k);
 		if(i < IDMAX){
-			mem[i] = rw8_nvr(j, mem[i], k);
+			mem[i] = rw8_nvr(j, 0, k);					// mem&call array indicies are only valid for bottom half of VFO space
 			call[i] = rw8_nvr(j, 0, k);
 		}else{
-			rw8_nvr(j, mem[i], k);						// dummy reads
+			rw8_nvr(j, 0, k);							// dummy reads
 			rw8_nvr(j, 0, k);
 		}
 		vfo_p[i].bflags = rw8_nvr(j, 0, k);
@@ -984,9 +974,9 @@ void  recall_vfo(void){
 		if(i == (stopid - 1)) k |= CS_CLOSE;
 		vfo_p[i].tsb = rw8_nvr(j, 0, k);
 	}
-	ux129_xit = rw8_nvr(XIT_0, 0, CS_OPEN);
-	ux129_rit = rw8_nvr(RIT_0, 0, CS_IDLE);
-	bandid_m = rw8_nvr(BIDM_0, 0, CS_IDLE);
+	ux129_xit = rw8_nvr(XIT_0, 0, CS_READ|CS_OPEN);
+	ux129_rit = rw8_nvr(RIT_0, 0, CS_READ);
+	bandid_m = rw8_nvr(BIDM_0, 0, CS_READ);
 	bandid_s = rw8_nvr(BIDS_0, 0, CS_CLOSE);
 	read_xmode();
 	vol_s = vfo_p[0].vol;								// restore vol s/m
@@ -2815,7 +2805,35 @@ U8 togg_scanmem(U8 focus){
 // init_vfos() inits VFOs for fact init
 //-----------------------------------------------------------------------------
 void init_vfos(U8 update){
-	// init vfos
+	U8	i;
+
+	// First, initialize meta data.  e.g., duplex, tone, vol, squ, etc... for each band unit domain
+	for(i=ID10M_IDX; i<NUM_VFOS; i++){
+		vfo_p[i].dplx = DPLX_S | LOHI_F;			// duplex = S & low power
+		vfo_p[i].ctcss = 0x0c;						// PL setting = 100.0
+		vfo_p[i].sq = LEVEL_MAX;					// SQ setting
+		vfo_p[i].vol = 20;							// vol setting (deprecated)
+		vfo_p[i].tsa = 1;							// tsa/b defaults
+		vfo_p[i].tsb = 2;
+		vfo_p[i].mem = 0;
+		vfo_p[i].call = CALL_MEM;
+		if(i<IDMAX){
+			mem[i] = 0;
+			call[i] = CALL_MEM;
+		}
+		vfo_p[i].bflags = 0xff;						// expansion flags
+		vfo_p[i].scanflags = 0xff;					// scan flags (expansion)
+		vfo_tulim[i] = vfo_ulim[i];					// copy RX limits to TX
+		vfo_tllim[i] = vfo_llim[i];
+		memname[i][0] = '\0';						// init mem names
+	}
+	vol_m = 20;										// vol setting (is nor one setting for the radio, not per band unit domain)
+	vol_s = 20;
+	// UX129 has separate meta data for VXO
+	ux129_xit = 0;									// X/RIT settings
+	ux129_rit = 0;
+	clear_xmode();									// init xmode to no mem/call
+	// init band-specific freqs
 	vfo_p[ID10M_IDX].vfo = 29100000L;				// each band has a unique initial freq
 	vfo_p[ID6M_IDX].vfo = 52525000L;
 	vfo_p[ID2M_IDX].vfo = 145450000L;
@@ -2849,6 +2867,11 @@ void init_vfos(U8 update){
 	vfo_p[ID1200_IDX+IDMAX].offs = 20000;
 	vfo_p[IDR91_IDX+IDMAX].offs = 0L;
 	vfo_p[IDS92_IDX+IDMAX].offs = 0L;
+	for(bandid_m=ID10M_IDX; bandid_m<=IDMAX; bandid_m++){
+		for(i=0; i<NUM_MEMS; i++){
+			write_mem(MAIN, i);
+		}
+	}
 	// opt update
 	if(update){
 		update_radio_all(UPDATE_ALL);				// force radio update

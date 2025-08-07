@@ -134,7 +134,7 @@ void send_so(uint64_t data, U8 r91a){
 		dptr[0] |= 0x80;									// set start bit if not UX-R91a 2nd-word
 	}
 	for(jk=0; jk<5; jk++){
-		while(SSI1_SR_R & SSI_SR_BSY);						// wait for fifo to empty (this shouldn't hang up unless UX-R91A messages are being sent)
+		while(!(SSI1_SR_R & SSI_SR_TNF));					// wait for fifo to empty (this shouldn't hang up unless UX-R91A messages are being sent)
 		SSI1_DR_R = dptr[jk];
 	}
 	return;

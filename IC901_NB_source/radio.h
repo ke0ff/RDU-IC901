@@ -74,26 +74,30 @@ struct vfo_struct {
 #define	VOL_0		(SQ_0 + sizeof(U8))			// VOL
 #define	MEM_0		(VOL_0 + sizeof(U8))		// mem#
 #define	CALL_0		(MEM_0 + sizeof(U8))		// call-mem#
-#define	BFLAGS_0	(CALL_0 + sizeof(U8))		// expansion flags
+#define	MEM_ARY_0	(CALL_0 + sizeof(U8))		// mem array#
+#define CALL_ARY_0	(MEM_ARY_0 + sizeof(U8))	// call array#
+#define	BFLAGS_0	(CALL_ARY_0 + sizeof(U8))	// expansion flags
 #define	SCANFLAGS_0	(BFLAGS_0 + sizeof(U8))		// scan (expansion) flags
 #define	TSA_0		(SCANFLAGS_0 + sizeof(U8))	// frq step "A"
 #define	TSB_0		(TSA_0 + sizeof(U8))		// frq step "B"
-#define	VFO_LEN		((TSB_0 + sizeof(U8)) - VFO_0)
+#define	BAND_END	(TSB_0 + sizeof(U8))
+#define	VFO_LEN		(BAND_END - VFO_0)
+#define	VFO_END		((VFO_LEN * NUM_VFOS) + VFO_0)
 
 #define	IDX_VFO		0							// Byte address offsets for NVRAM addressing
-#define	IDX_OFFS	OFFS_0 - VFO_0
-#define	IDX_DPLX	DPLX_0 - VFO_0
-#define	IDX_CTCSS	CTCSS_0 - VFO_0
-#define	IDX_SQ		SQ_0 - VFO_0
-#define	IDX_VOL		VOL_0 - VFO_0
-#define	IDX_MEM		MEM_0 - VFO_0
-#define	IDX_CALL	CALL_0 - VFO_0
-#define	IDX_BFLAGS	BFLAGS_0 - VFO_0
-#define	IDX_SCANFLAGS SCANFLAGS_0 - VFO_0
-#define	IDX_TSA		TSA_0 - VFO_0
-#define	IDX_TSB		TSB_0 - VFO_0
-
-#define	VFO_END		((VFO_LEN * NUM_VFOS) + VFO_0)
+#define	IDX_OFFS	(OFFS_0 - VFO_0)
+#define	IDX_DPLX	(DPLX_0 - VFO_0)
+#define	IDX_CTCSS	(CTCSS_0 - VFO_0)
+#define	IDX_SQ		(SQ_0 - VFO_0)
+#define	IDX_VOL		(VOL_0 - VFO_0)
+#define	IDX_MEM		(MEM_0 - VFO_0)
+#define	IDX_CALL	(CALL_0 - VFO_0)
+#define	IDX_MEM_ARY	(MEM_ARY_0 - VFO_0)
+#define IDX_CALL_ARY	(CALL_ARY_0 - VFO_0)
+#define	IDX_BFLAGS	(BFLAGS_0 - VFO_0)
+#define	IDX_SCANFLAGS (SCANFLAGS_0 - VFO_0)
+#define	IDX_TSA		(TSA_0 - VFO_0)
+#define	IDX_TSB		(TSB_0 - VFO_0)
 
 // MEM space //
 #define	MEM_NAME_LEN	16
@@ -101,8 +105,8 @@ struct vfo_struct {
 
 // mem structure follows this format:
 // [VFO + OFFS + DPLX + CTCSS + SQ + VOL] + [XIT + RIT + BID] + MEM_NAME_LEN
-#define	MEM_LEN			(VFO_LEN + (sizeof(U8) * 3) + MEM_NAME_LEN)
-#define	MEM_STR_ADDR	(sizeof(U32) + sizeof(U16) + (sizeof(U8) * 7))
+#define	MEM_STR_ADDR (sizeof(U32) + sizeof(U16) + (sizeof(U8) * 7))
+#define	MEM_LEN		(MEM_STR_ADDR + MEM_NAME_LEN)
 #define	MAX_MEM		30
 #define	MAX_MEM2	(MAX_MEM * 2)			// double the IC900 mem space
 #define	CALL_MEM	MAX_MEM2
@@ -118,6 +122,11 @@ struct vfo_struct {
 #define	IDR91_MEM	(ID1200_MEM + (NUM_MEMS * MEM_LEN))
 #define	IDS92_MEM	(IDR91_MEM + (NUM_MEMS * MEM_LEN))
 #define	MEM_END		(IDS92_MEM + (NUM_MEMS * MEM_LEN))
+
+#define	VFO_CRC		MEM_END
+#define	MEM_CRC		(VFO_CRC + sizeof(U16))
+// buffer 12 more bytes here
+#define	CRC_END		(VFO_CRC + (sizeof(U16)*8))
 
 //////////////////////////////////////////////////////////////
 // CTCSS flags

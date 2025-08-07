@@ -214,6 +214,7 @@ uint8_t rw8_nvr(uint32_t addr, uint8_t dataw, uint8_t mode)
  * rw16_nvr sends word-rw cmd to the NVRAM
  *
  * Supports same modes as rw8_nvr()
+ * Writes data low byte first, high byte last
  */
 uint16_t rw16_nvr(uint32_t addr, uint16_t dataw, uint8_t mode)
 {
@@ -233,6 +234,7 @@ uint16_t rw16_nvr(uint32_t addr, uint16_t dataw, uint8_t mode)
  * rw32_nvr sends wword-rw cmd to the NVRAM
  *
  * Supports same modes as rw8_nvr()
+ * Writes data low byte first, high byte last
  */
 uint32_t rw32_nvr(uint32_t addr, uint32_t dataw, uint8_t mode)
 {

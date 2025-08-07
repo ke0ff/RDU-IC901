@@ -15,6 +15,13 @@
  *    Copied from IC900_RDU application.  See that project's revnotes prior to 10-19-21 for historical rev status. N2T = "Need to Test".
  *
  *    Project scope rev History:
+ *    08-06-25 jmh:  CM issues caused some problems.  Need to synch actual source into github and use that as main source only.
+ *    				 VFO save/restore seems to be in better shape.  Still need to test more.
+ *    				 Working VFO not being saved.  Need to relearn and debug.
+ *    				 SQU tape is non linear. Top 5 bars are only one step each.  Remaining 29 steps divided among first 4 bars
+ *    08-01-25 jmh:  Revisited NVRAM memory map and save/recall routines.  Found some seemingly serious inconsistencies that have (hopefully) been
+ *    					corrected.  One looked to cause a memory leak that would explain the garbled VFOs on power-up.  The fact that *some* power-ups
+ *    					didn't garble the VFOs is the most troubling.  Hopefully, these issues were the cause/fix.  Will need to re-init mems.
  *    07-29-25 jmh:  Slowly working out kinks from IC900F version.  Got 2m-base unit tx/rx working  Lots of bit alignment issues that needed (and
  *    					still likely need) working out.  For example, UT-48 is sending tones on TX, but nothing is in place to command that other
  *    					than the default init stream that is in place (likely the default data that is the cause).
